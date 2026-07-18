@@ -1,0 +1,74 @@
+[package]
+name = "meigrss"
+version = "1.0.0"
+edition = "2024"
+description = "MeigRSS - Your personal news feed aggregator with AI summaries"
+authors = ["Giulio Magini"]
+
+[build-dependencies]
+winresource = "0.1"
+
+[dependencies]
+# HTTP framework
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.7", features = ["cors", "set-header"] }
+
+# RSS parsing
+feed-rs = "2.4"
+
+# HTTP client for fetching feeds and articles
+reqwest = { version = "0.13", features = ["json"] }
+
+# HTML scraping and text extraction
+scraper = "0.27"
+
+# Mozilla Readability algorithm for reliable article text extraction
+readabilityrs = "0.1"
+
+# EML file parsing for newsletter import
+mail-parser = "0.11"
+
+# Database
+rusqlite = { version = "0.40", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Date/time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Encryption for API key storage
+aes-gcm = "0.11"
+base64 = "0.22"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# UUID generation for article IDs
+uuid = { version = "1", features = ["v4"] }
+
+# HTML sanitization (strips dangerous HTML from feed content)
+ammonia = "4"
+
+# Environment variable support (.env files)
+dotenvy = "0.15"
+
+# Embed static frontend files into the binary at compile time (production only)
+include_dir = "0.7"
+
+# MIME type detection for serving static files
+mime_guess = "2"
+
+# Open the default browser automatically on startup
+open = "5"
+
+[package.metadata.bundle]
+name = "MeigRSS"
+identifier = "com.giuliomagini.meigrss"
+icon = ["icons/icon.icns"]
+category = "public.app-category.news"
+short_description = "Your personal news feed aggregator with AI summaries"

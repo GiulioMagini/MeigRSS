@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=MeigRSS
+Comment=Your personal news feed aggregator with AI summaries
+Exec=/usr/local/bin/meigrss
+Icon=/usr/local/share/icons/meigrss.png
+Terminal=false
+Type=Application
+Categories=Network;News;
