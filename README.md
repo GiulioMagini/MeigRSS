@@ -3,8 +3,11 @@
 MeigRSS is a local news aggregator with AI-powered summaries. It collects articles from configured RSS feeds, newsletter (EML files) and web feed (with external API); extracts full text on demand, and generates summaries via AI APIs (Mistral, OpenAI, Claude, Gemini).
 
 **Tested on:** Windows 11, Linux (Debian 13)
+
 **AI API tested with:** Mistral (Small and Large). Other providers (OpenAI, Claude, Gemini) use standard API formats and should work without issues, but have not been explicitly tested.
+
 **Web Feed API tested with:** Scrape.do. Other providers (ScraperAPI, ScrapingBee, Scrapfly, ZenRows) use the same API + URL formats and should work without issues, but have not been explicitly tested.
+
 **Last updated:** July 2026
 
 ---
@@ -275,7 +278,7 @@ A web rendering API is required to scan web pages. Go to **Settings > API Config
 Supported providers (all these providers have a specific paid plan, check their sites for more information):
 
 | Provider | Free tier | JS rendering cost
-|---|---|---|---|
+|---|---|---|
 | **Scrape.do** | 1,000 credits/month | ×5 credits (~200 pages/month)
 | **ScraperAPI** | 1,000 credits/month | ×10 credits (~100 pages/month)
 | **ScrapingBee** | No permanent free tier | ×5 credits
@@ -445,7 +448,7 @@ MIT License
 
 Copyright (c) 2026 Giulio Magini
 
-See LICENSE.md for the full license text.
+See LICENSE for the full license text.
 
 All third-party dependencies use permissive open-source licenses (MIT, Apache 2.0, BSD) compatible with this project's MIT license. Their licenses are included in their respective packages and are automatically available when building the project.
 
