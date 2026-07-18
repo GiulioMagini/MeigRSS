@@ -10,7 +10,7 @@ MeigRSS is a local news aggregator with AI-powered summaries. It collects articl
 
 Full video explanation (in italian): https://www.youtube.com/watch?v=J4hxeypqo68
 
-Direct download (Windows executable): https://giuliomagini.com/download/meigrss.exe
+Direct download (Windows executable): https://giuliomagini.com/download/MeigRSS.7z
 
 **Last updated:** July 2026
 
