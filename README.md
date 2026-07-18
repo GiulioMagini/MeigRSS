@@ -9,6 +9,7 @@ MeigRSS is a local news aggregator with AI-powered summaries. It collects articl
 **Web Feed API tested with:** Scrape.do. Other providers (ScraperAPI, ScrapingBee, Scrapfly, ZenRows) use the same API + URL formats and should work without issues, but have not been explicitly tested.
 
 Full video explanation (in italian): https://www.youtube.com/watch?v=J4hxeypqo68
+
 Direct download (Windows executable): https://giuliomagini.com/download/meigrss.exe
 
 **Last updated:** July 2026
