@@ -324,7 +324,7 @@ MeigRSS supports four AI providers for summary generation:
 |---|---|---|
 | **Mistral Small** (default) | mistral-small-latest | Yes (Experiment) |
 | **Mistral Large** | mistral-large-latest | Yes (Experiment) |
-| OpenAI | gpt-5.4-mini | No |
+| OpenAI | gpt-5.6-luna | No |
 | Claude | claude-haiku-4-5 | No |
 | Gemini | gemini-3.5-flash | Yes (with limits) |
 
@@ -436,7 +436,7 @@ Application data is stored in the `data/` folder next to the executable:
 
 MeigRSS is an RSS feed aggregator for personal use. RSS feeds are intentionally published by websites to be read by aggregators.
 
-The full text download (scraping) feature is at the user's discretion. Before enabling it for a feed, it is the user's responsibility to verify that the website's terms of use allow it. Downloading full text is technically equivalent to saving a web page from your browser as an HTML file for personal reading.
+The full text download (scraping) and the web scraping features is at the user's discretion. Before enabling it for a feed, it is the user's responsibility to verify that the website's terms of use allow it. Downloading full text is technically equivalent to saving a web page from your browser as an HTML file for personal reading.
 
 The software author is not responsible for any misuse of the scraping features or for any violation of the terms of service of aggregated websites. The web feed monitoring feature uses third-party rendering APIs to download and render web pages. The user is responsible for complying with the terms of service of both the monitored websites and the rendering API provider. API usage and associated costs are the user's responsibility.
 
