@@ -267,7 +267,7 @@ Newsletter feeds and their articles are included in feed exports and can be re-i
 
 ### Web feed monitoring
 
-MeigRSS can monitor web pages that don't have an RSS feed. Articles are discovered by scanning the page for links matching a date-based URL pattern (`domain/yyyy/mm/dd/slug`), using an external JavaScript rendering service to handle dynamically loaded content.
+MeigRSS can monitor web pages that don't have an RSS feed. Articles are discovered by scanning the page for links matching a date-based URL pattern (`domain/yyyy/mm/dd/slug`, `domain/yyyy/m/d/slug`, `domain/yyyy/mmm/dd/slug`, `domain/yyyymmdd-slug`), using an external JavaScript rendering service to handle dynamically loaded content.
 
 #### Setting up the rendering API
 
@@ -299,7 +299,7 @@ The API key is encrypted with AES-256-GCM, same as the AI API key. Free tier ava
 4. Click **Test scan** — the system will render the page and search for article links
 5. If articles are found, select a category and click **Add web feed**
 
-The scan looks for links whose URL contains a date pattern (`domain/yyyy/mm/dd/slug`). Only links pointing to the same domain as the monitored page are captured.
+The scan looks for links whose URL contains a date pattern (see above). Only links pointing to the same domain as the monitored page are captured.
 
 #### How web feeds work
 

@@ -482,39 +482,35 @@ fn resolve_system_italian() -> bool {
         exe_dir.join("data").join("meigrss.db").to_string_lossy().to_string()
     });
 
-    if std::path::Path::new(&db_path).exists() {
-        if let Ok(conn) = rusqlite::Connection::open(&db_path) {
-            if let Ok(lang) = conn.query_row(
-                "SELECT value FROM settings WHERE key = 'language'",
-                [],
-                |row| row.get::<_, String>(0),
-            ) {
-                if lang == "it" {
-                    return true;
-                }
-                if lang == "en" {
-                    return false;
-                }
-                // "auto" or unknown → fall through to system detection
-            }
+    if std::path::Path::new(&db_path).exists()
+        && let Ok(conn) = rusqlite::Connection::open(&db_path)
+        && let Ok(lang) = conn.query_row(
+            "SELECT value FROM settings WHERE key = 'language'",
+            [],
+            |row| row.get::<_, String>(0),
+        ) {
+        if lang == "it" {
+            return true;
         }
+        if lang == "en" {
+            return false;
+        }
+        // "auto" or unknown → fall through to system detection
     }
 
     // Priority 2: check system environment
     for var in &["LANG", "LC_ALL", "LC_MESSAGES"] {
-        if let Ok(val) = std::env::var(var) {
-            if val.to_lowercase().starts_with("it") {
-                return true;
-            }
+        if let Ok(val) = std::env::var(var)
+            && val.to_lowercase().starts_with("it") {
+            return true;
         }
     }
 
     #[cfg(target_os = "windows")]
     {
-        if let Ok(val) = std::env::var("USERLANG") {
-            if val.to_lowercase().starts_with("it") {
-                return true;
-            }
+        if let Ok(val) = std::env::var("USERLANG")
+            && val.to_lowercase().starts_with("it") {
+            return true;
         }
     }
 

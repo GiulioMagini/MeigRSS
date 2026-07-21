@@ -61,19 +61,17 @@ fn get_encryption_key() -> [u8; 32] {
 
         // Priority 2: key file
         let path = key_file_path();
-        if let Ok(contents) = std::fs::read_to_string(&path) {
-            if let Ok(key_bytes) = BASE64.decode(contents.trim()) {
-                if key_bytes.len() == 32 {
-                    let mut key = [0u8; 32];
-                    key.copy_from_slice(&key_bytes);
-                    if crate::is_system_italian() {
-                        tracing::info!("Chiave di crittografia caricata da {}", path.display());
-                    } else {
-                        tracing::info!("Encryption key loaded from {}", path.display());
-                    }
-                    return key;
-                }
+        if let Ok(contents) = std::fs::read_to_string(&path)
+            && let Ok(key_bytes) = BASE64.decode(contents.trim())
+            && key_bytes.len() == 32 {
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&key_bytes);
+            if crate::is_system_italian() {
+                tracing::info!("Chiave di crittografia caricata da {}", path.display());
+            } else {
+                tracing::info!("Encryption key loaded from {}", path.display());
             }
+            return key;
         }
 
         // Generate 32 random bytes via the Generate trait (system CSPRNG).

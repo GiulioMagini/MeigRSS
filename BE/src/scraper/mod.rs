@@ -34,10 +34,9 @@ pub async fn extract_article_text(url: &str) -> Result<String, String> {
     // The cap prevents arbitrarily large pages from exhausting memory.
     const MAX_BODY_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
-    if let Some(len) = response.content_length() {
-        if len as usize > MAX_BODY_BYTES {
-            return Err(format!("Article body too large ({} bytes) from {}", len, url));
-        }
+    if let Some(len) = response.content_length()
+        && len as usize > MAX_BODY_BYTES {
+        return Err(format!("Article body too large ({} bytes) from {}", len, url));
     }
 
     let mut response = response;
@@ -62,10 +61,9 @@ pub async fn extract_article_text(url: &str) -> Result<String, String> {
     };
 
     // Primary strategy: Mozilla Readability algorithm
-    if let Some(text) = extract_with_readability(&html, url) {
-        if text.len() > 50 {
-            return Ok(clean_extracted_text(&text));
-        }
+    if let Some(text) = extract_with_readability(&html, url)
+        && text.len() > 50 {
+        return Ok(clean_extracted_text(&text));
     }
 
     // Fallback: manual CSS selector-based extraction
@@ -125,21 +123,19 @@ fn extract_readable_content(html: &str) -> String {
 
     // Try each selector in priority order
     for selector_str in &content_selectors {
-        if let Ok(selector) = Selector::parse(selector_str) {
-            if let Some(element) = document.select(&selector).next() {
-                let text = collect_text_simple(&element);
-                if text.len() > 50 {
-                    return text;
-                }
+        if let Ok(selector) = Selector::parse(selector_str)
+            && let Some(element) = document.select(&selector).next() {
+            let text = collect_text_simple(&element);
+            if text.len() > 50 {
+                return text;
             }
         }
     }
 
     // Fallback: extract from body
-    if let Ok(body_selector) = Selector::parse("body") {
-        if let Some(body) = document.select(&body_selector).next() {
-            return collect_text_simple(&body);
-        }
+    if let Ok(body_selector) = Selector::parse("body")
+        && let Some(body) = document.select(&body_selector).next() {
+        return collect_text_simple(&body);
     }
 
     String::new()

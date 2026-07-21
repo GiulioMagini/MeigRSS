@@ -742,7 +742,7 @@ impl Database {
             _ => ("a.published_at DESC", "DESC"),
         };
 
-        let per_page = query.per_page.unwrap_or(10).min(100).max(10);
+        let per_page = query.per_page.unwrap_or(10).clamp(10, 100);
         let page = query.page.unwrap_or(1).max(1);
         let offset = (page - 1) * per_page;
 
@@ -759,10 +759,10 @@ impl Database {
 
         match query.favorites_filter.as_deref() {
             Some("only") => {
-                conditions.push(format!("a.is_favorite = 1"));
+                conditions.push("a.is_favorite = 1".to_string());
             }
             Some("exclude") => {
-                conditions.push(format!("a.is_favorite = 0"));
+                conditions.push("a.is_favorite = 0".to_string());
             }
             _ => {} // "all" or None — no filter
         }

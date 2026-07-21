@@ -99,16 +99,14 @@ pub fn import_eml(
 /// Falls back to simple text extraction if Readability fails.
 fn extract_text_from_html(html: &str) -> String {
     // Try Readability first for clean content extraction
-    if let Ok(readability) = readabilityrs::Readability::new(html, None, None) {
-        if let Some(article) = readability.parse() {
-            if let Some(content_html) = article.content {
-                let document = Html::parse_document(&content_html);
-                let text: String = document.root_element().text().collect::<Vec<_>>().join(" ");
-                let cleaned = clean_whitespace(&text);
-                if cleaned.len() > 50 {
-                    return cleaned;
-                }
-            }
+    if let Ok(readability) = readabilityrs::Readability::new(html, None, None)
+        && let Some(article) = readability.parse()
+        && let Some(content_html) = article.content {
+        let document = Html::parse_document(&content_html);
+        let text: String = document.root_element().text().collect::<Vec<_>>().join(" ");
+        let cleaned = clean_whitespace(&text);
+        if cleaned.len() > 50 {
+            return cleaned;
         }
     }
 

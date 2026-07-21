@@ -549,12 +549,10 @@ impl LlmClient {
                 .send()
                 .await;
 
-            if let Ok(resp) = response {
-                if resp.status().is_success() {
-                    if let Ok(text) = resp.text().await {
-                        return Ok(text);
-                    }
-                }
+            if let Ok(resp) = response
+                && resp.status().is_success()
+                && let Ok(text) = resp.text().await {
+                return Ok(text);
             }
             // If dedicated endpoint fails, fall through to asking the model
         }

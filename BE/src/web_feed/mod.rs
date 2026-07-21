@@ -4,7 +4,7 @@
 //! `domain/yyyy/mm/dd/slug` are treated as feed entries.
 
 use chrono::Utc;
-use reqwest::Client;
+use reqwest::{Client, Url};
 use scraper::{Html, Selector};
 use uuid::Uuid;
 
@@ -43,6 +43,11 @@ pub async fn scan_web_page(
     page_url: &str,
     pattern: &str,
 ) -> Result<Vec<ExtractedLink>, String> {
+    // Parsed once and reused to resolve relative hrefs found on the page
+    // (many sites link articles with root-relative "/x" or protocol-relative
+    // "//x" paths instead of fully-qualified URLs).
+    let base_url = Url::parse(page_url).map_err(|e| format!("Invalid page URL: {}", e))?;
+
     let render_url = provider.render_url(api_key, page_url);
 
     let response = client
@@ -65,7 +70,7 @@ pub async fn scan_web_page(
         .await
         .map_err(|e| format!("Failed to read rendered HTML: {}", e))?;
 
-    Ok(extract_links_from_html(&html, pattern))
+    Ok(extract_links_from_html(&html, pattern, &base_url))
 }
 
 /// Tests a web page scan: calls the rendering API and checks if at least
@@ -292,10 +297,12 @@ fn extract_domain_pattern(url: &str) -> Result<String, String> {
     Ok(domain.to_string())
 }
 
-/// Extracts article links from HTML that match the date-based URL pattern.
-/// Pattern: links whose href contains `domain/yyyy/mm/dd/` followed by a slug.
+/// Extracts article links from HTML that match a date-based URL pattern.
+/// Relative hrefs are resolved against `base_url` before matching, since
+/// many sites link articles with root- or protocol-relative paths rather
+/// than fully-qualified URLs.
 /// Deduplicates by URL (same article may appear as image + text links).
-fn extract_links_from_html(html: &str, domain_pattern: &str) -> Vec<ExtractedLink> {
+fn extract_links_from_html(html: &str, domain_pattern: &str, base_url: &Url) -> Vec<ExtractedLink> {
     let document = Html::parse_document(html);
     let a_selector = match Selector::parse("a[href]") {
         Ok(s) => s,
@@ -315,14 +322,24 @@ fn extract_links_from_html(html: &str, domain_pattern: &str) -> Vec<ExtractedLin
             None => continue,
         };
 
+        // Resolve relative hrefs against the page's own URL
+        let Ok(resolved) = base_url.join(href) else {
+            continue;
+        };
+
         // Filter: only match links pointing to the same domain
-        if !href_matches_domain(href, domain_bare) {
+        let host_matches = resolved
+            .host_str()
+            .is_some_and(|h| host_matches_domain(h, domain_bare));
+        if !host_matches {
             continue;
         }
 
+        let resolved_str = resolved.as_str();
+
         // Check if the href matches the date-based pattern
-        if let Some(captures) = SimpleDateUrlMatcher.captures(href) {
-            let url = normalize_url(href);
+        if let Some(captures) = SimpleDateUrlMatcher.captures(resolved_str) {
+            let url = normalize_url(resolved_str);
 
             // Deduplicate by URL
             if seen_urls.contains(&url) {
@@ -377,25 +394,12 @@ fn extract_link_title(element: &scraper::ElementRef) -> String {
     String::new()
 }
 
-/// Checks if a URL's domain matches the expected domain (case-insensitive).
+/// Checks if a resolved URL's host matches the expected domain (case-insensitive).
 /// Strips "www." from both sides before comparing.
-fn href_matches_domain(href: &str, domain_bare: &str) -> bool {
-    let href_lower = href.to_lowercase();
-    let after_scheme = href_lower
-        .strip_prefix("https://")
-        .or_else(|| href_lower.strip_prefix("http://"));
-
-    let after_scheme = match after_scheme {
-        Some(s) => s,
-        None => return false,
-    };
-
-    let href_domain = after_scheme.split('/').next().unwrap_or("");
-    let href_bare = href_domain
-        .split(':').next().unwrap_or(href_domain) // strip port
-        .strip_prefix("www.").unwrap_or(href_domain.split(':').next().unwrap_or(href_domain));
-
-    href_bare == domain_bare
+fn host_matches_domain(host: &str, domain_bare: &str) -> bool {
+    let host_lower = host.to_lowercase();
+    let host_bare = host_lower.strip_prefix("www.").unwrap_or(&host_lower);
+    host_bare == domain_bare
 }
 
 /// Strips leading or trailing time patterns (HH:MM or HH:MM:SS) from a title.
@@ -521,7 +525,7 @@ fn strip_prefix_marker_time(s: &str, lower: &str) -> Option<String> {
 
             // The marker must start at a word boundary
             let boundary_ok = start == 0
-                || lower[..start].chars().next_back().map_or(true, |c| !c.is_alphanumeric());
+                || lower[..start].chars().next_back().is_none_or(|c| !c.is_alphanumeric());
             if !boundary_ok {
                 search_from = start + marker.len();
                 continue;
@@ -544,7 +548,7 @@ fn strip_prefix_marker_time(s: &str, lower: &str) -> Option<String> {
             let rest = &lower[idx..];
             let matched_unit = units.iter().find(|u| {
                 rest.starts_with(*u)
-                    && rest[u.len()..].chars().next().map_or(true, |c| !c.is_alphanumeric())
+                    && rest[u.len()..].chars().next().is_none_or(|c| !c.is_alphanumeric())
             });
             let Some(unit) = matched_unit else {
                 search_from = start + marker.len();
@@ -555,7 +559,7 @@ fn strip_prefix_marker_time(s: &str, lower: &str) -> Option<String> {
             // Prefer the text after the time expression, fall back to the text before
             let after = s[end..]
                 .trim()
-                .trim_start_matches(|c: char| c == ',' || c == ':' || c == '-' || c == '–')
+                .trim_start_matches([',', ':', '-', '–'])
                 .trim();
             if !after.is_empty() {
                 return Some(after.to_string());
@@ -571,75 +575,173 @@ fn strip_prefix_marker_time(s: &str, lower: &str) -> Option<String> {
     None
 }
 
-/// Lightweight URL matcher for the `domain/yyyy/mm/dd/slug` pattern.
+/// Lightweight URL matcher for date-based article URLs.
 /// Avoids pulling in the `regex` crate as a dependency.
+/// Supports four date layouts observed across major publishers:
+/// 1. `/yyyy/mm/dd/slug`  — zero-padded numeric
+/// 2. `/yyyy/m/d/slug`    — non-padded numeric
+/// 3. `/yyyy/mmm/dd/slug` — 3-letter English month
+/// 4. `/yyyymmdd-slug`    — compact 8-digit date prefixing the slug
 struct SimpleDateUrlMatcher;
 
 /// Captured groups from a date-based URL match.
-struct UrlCaptures<'a> {
-    groups: [&'a str; 4], // year, month, day, slug
+/// Values are owned because month and day are normalized to zero-padded
+/// numeric form (e.g. "jul" -> "07", "1" -> "01"), which cannot borrow from
+/// the original URL.
+struct UrlCaptures {
+    groups: [String; 4], // year, month, day, slug
 }
 
-impl std::ops::Index<usize> for UrlCaptures<'_> {
+impl std::ops::Index<usize> for UrlCaptures {
     type Output = str;
     fn index(&self, index: usize) -> &Self::Output {
-        self.groups[index - 1]
+        self.groups[index - 1].as_str()
     }
 }
 
 impl SimpleDateUrlMatcher {
-    /// Attempts to match a URL against the `domain/yyyy/mm/dd/slug` pattern.
-    /// Returns captured groups: [1]=year, [2]=month, [3]=day, [4]=slug.
-    fn captures<'a>(&self, url: &'a str) -> Option<UrlCaptures<'a>> {
+    /// Attempts to match a URL against any supported date layout.
+    /// Returns captured groups: [1]=year, [2]=month, [3]=day, [4]=slug,
+    /// with month and day always normalized to zero-padded two-digit numbers.
+    fn captures(&self, url: &str) -> Option<UrlCaptures> {
         // Find the path portion after the domain
         let path_start = url.find("://")?;
         let after_scheme = &url[path_start + 3..];
         // Skip past the domain
         let slash_pos = after_scheme.find('/')?;
         let path = &after_scheme[slash_pos..];
+
         // Ignore query string and fragment: article identity is in the path
         // only, and rendering APIs may attach variable tracking parameters
-        let path = path.split(|c| c == '?' || c == '#').next().unwrap_or(path);
+        let path = path.split(['?', '#']).next().unwrap_or(path);
 
-        // Look for /yyyy/mm/dd/slug pattern anywhere in the path
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
+        // Families 1-3: `year / month / day` in separate segments, then a slug
         for window in segments.windows(4) {
-            let year = window[0];
-            let month = window[1];
-            let day = window[2];
-            let slug = window[3];
+            if let Some(caps) = Self::match_split_date(window[0], window[1], window[2], window[3]) {
+                return Some(caps);
+            }
+        }
 
-            // Validate year (4 digits, reasonable range)
-            if year.len() != 4 || year.parse::<u16>().map_or(true, |y| y < 2000 || y > 2100) {
-                continue;
+        // Family 4: a single segment `yyyymmdd-slug` with a compact date prefix
+        for seg in &segments {
+            if let Some(caps) = Self::match_compact_date(seg) {
+                return Some(caps);
             }
-            // Validate month (2 digits, 01-12)
-            if month.len() != 2 || month.parse::<u8>().map_or(true, |m| m < 1 || m > 12) {
-                continue;
-            }
-            // Validate day (2 digits, 01-31)
-            if day.len() != 2 || day.parse::<u8>().map_or(true, |d| d < 1 || d > 31) {
-                continue;
-            }
-            // Validate slug (starts with alphanumeric, at least 2 chars)
-            if slug.len() < 2 || !slug.chars().next().map_or(false, |c| c.is_alphanumeric()) {
-                continue;
-            }
-            // Slug must contain only alphanumeric, hyphens, underscores
-            if !slug.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-                continue;
-            }
-
-            return Some(UrlCaptures {
-                groups: [year, month, day, slug],
-            });
         }
 
         None
     }
-}
 
+    /// Matches families 1-3: `year`, `month`, `day` in separate path segments
+    /// followed by a slug. Month may be zero-padded, non-padded, or a 3-letter
+    /// English abbreviation; day may be zero-padded or non-padded.
+    fn match_split_date(year: &str, month: &str, day: &str, slug: &str) -> Option<UrlCaptures> {
+        let year_num = Self::valid_year(year)?;
+        let month_num = Self::parse_month(month)?;
+        let day_num = Self::parse_day(day)?;
+        Self::valid_slug(slug)?;
+
+        Some(UrlCaptures {
+            groups: [
+                year_num.to_string(),
+                format!("{:02}", month_num),
+                format!("{:02}", day_num),
+                slug.to_string(),
+            ],
+        })
+    }
+
+    /// Matches family 4: a segment starting with a compact `yyyymmdd` date
+    /// followed by a `-`/`_` separator and the slug (e.g. "20260122-athens-floods").
+    fn match_compact_date(segment: &str) -> Option<UrlCaptures> {
+        // The compact date is the first 8 bytes and must be ASCII digits;
+        // byte indexing below is safe because those bytes are all ASCII
+        if segment.len() < 9 || !segment.as_bytes()[..8].iter().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let sep = segment.as_bytes()[8];
+        if sep != b'-' && sep != b'_' {
+            return None;
+        }
+        let year_num = Self::valid_year(&segment[0..4])?;
+        let month_num = Self::parse_month(&segment[4..6])?;
+        let day_num = Self::parse_day(&segment[6..8])?;
+        let slug = &segment[9..];
+        Self::valid_slug(slug)?;
+
+        Some(UrlCaptures {
+            groups: [
+                year_num.to_string(),
+                format!("{:02}", month_num),
+                format!("{:02}", day_num),
+                slug.to_string(),
+            ],
+        })
+    }
+
+    /// Validates a 4-digit year within a plausible range and returns it.
+    fn valid_year(year: &str) -> Option<u16> {
+        if year.len() != 4 {
+            return None;
+        }
+        match year.parse::<u16>() {
+            Ok(y) if (2000..=2100).contains(&y) => Some(y),
+            _ => None,
+        }
+    }
+
+    /// Parses a month as a 1-2 digit number or a 3-letter English abbreviation.
+    /// Returns the month number (1-12).
+    fn parse_month(month: &str) -> Option<u8> {
+        // Numeric month covers both zero-padded ("07") and non-padded ("7")
+        if let Ok(m) = month.parse::<u8>() {
+            if (1..=12).contains(&m) && month.len() <= 2 {
+                return Some(m);
+            }
+            return None;
+        }
+        // Textual month: 3-letter English abbreviation, case-insensitive
+        const MONTHS: [&str; 12] = [
+            "jan", "feb", "mar", "apr", "may", "jun",
+            "jul", "aug", "sep", "oct", "nov", "dec",
+        ];
+        if month.len() == 3 {
+            let lower = month.to_ascii_lowercase();
+            if let Some(pos) = MONTHS.iter().position(|m| *m == lower) {
+                return Some((pos + 1) as u8);
+            }
+        }
+        None
+    }
+
+    /// Parses a day as a 1-2 digit number (1-31). Returns the day number.
+    fn parse_day(day: &str) -> Option<u8> {
+        if day.len() > 2 {
+            return None;
+        }
+        match day.parse::<u8>() {
+            Ok(d) if (1..=31).contains(&d) => Some(d),
+            _ => None,
+        }
+    }
+
+    /// Validates that a slug looks like an article slug: starts alphanumeric,
+    /// at least 2 chars, and contains only alphanumeric, hyphen or underscore.
+    fn valid_slug(slug: &str) -> Option<()> {
+        if slug.len() < 2 {
+            return None;
+        }
+        if !slug.chars().next().is_some_and(|c| c.is_alphanumeric()) {
+            return None;
+        }
+        if !slug.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            return None;
+        }
+        Some(())
+    }
+}
 /// Normalizes a URL by removing query strings, fragment identifiers and
 /// trailing slashes. Web feed article identity lives entirely in the URL
 /// path (`domain/yyyy/mm/dd/slug`), so variable tracking parameters

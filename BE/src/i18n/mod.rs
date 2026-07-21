@@ -207,7 +207,7 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_test", "Testa scansione");
     t.insert("web_feed_testing", "Scansione in corso...");
     t.insert("web_feed_test_ok", "Scansione riuscita");
-    t.insert("web_feed_no_articles", "Nessun articolo trovato nella pagina. Verifica che l'URL sia corretto e che la pagina contenga link con formato data (dominio/aaaa/mm/gg/...).");
+    t.insert("web_feed_no_articles", "Nessun articolo trovato nella pagina. Verifica che l'URL sia corretto e che la pagina contenga link con formato data.");
     t.insert("web_feed_articles_found", "articoli trovati");
     t.insert("web_feed_add", "Aggiungi web feed");
     t.insert("web_rendering_not_configured", "API di rendering web non configurata. Configurala nella pagina Configurazione API.");
@@ -390,7 +390,7 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_test", "Test scan");
     t.insert("web_feed_testing", "Scanning...");
     t.insert("web_feed_test_ok", "Scan successful");
-    t.insert("web_feed_no_articles", "No articles found on the page. Verify the URL is correct and the page contains date-patterned links (domain/yyyy/mm/dd/...).");
+    t.insert("web_feed_no_articles", "No articles found on the page. Verify the URL is correct and the page contains date-patterned links.");
     t.insert("web_feed_articles_found", "articles found");
     t.insert("web_feed_add", "Add web feed");
     t.insert("web_rendering_not_configured", "Web rendering API not configured. Set it up in the API Configuration page.");

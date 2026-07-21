@@ -44,11 +44,10 @@ fn decode_html_entities(input: &str) -> String {
         if let Some(end) = result[start..].find(';') {
             let entity = &result[start..start + end + 1];
             let num_str = &entity[2..entity.len() - 1];
-            if let Ok(code_point) = num_str.parse::<u32>() {
-                if let Some(ch) = char::from_u32(code_point) {
-                    result = result.replace(entity, &ch.to_string());
-                    continue;
-                }
+            if let Ok(code_point) = num_str.parse::<u32>()
+                && let Some(ch) = char::from_u32(code_point) {
+                result = result.replace(entity, &ch.to_string());
+                continue;
             }
             // If we can't parse it, skip past this entity to avoid infinite loop
             break;
@@ -219,12 +218,10 @@ async fn fetch_single_feed(
             .map(|d| d.to_rfc3339());
 
         // Skip articles older than the start_from date
-        if let Some(ref pub_date) = published_at {
-            if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(pub_date) {
-                if parsed < start_from {
-                    continue;
-                }
-            }
+        if let Some(ref pub_date) = published_at
+            && let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(pub_date)
+            && parsed < start_from {
+            continue;
         }
 
         // Extract the feed-provided summary if available.

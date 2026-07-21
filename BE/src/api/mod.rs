@@ -270,10 +270,9 @@ async fn delete_all_feeds(
     match state.db.delete_all_feeds() {
         Ok(_) => {
             // Optionally delete all non-default categories
-            if query.delete_categories.unwrap_or(false) {
-                if let Err(e) = state.db.delete_all_categories() {
-                    tracing::error!("Failed to delete categories: {}", e);
-                }
+            if query.delete_categories.unwrap_or(false)
+                && let Err(e) = state.db.delete_all_categories() {
+                tracing::error!("Failed to delete categories: {}", e);
             }
             Ok(ApiResponse::ok(()))
         }
@@ -568,7 +567,7 @@ async fn save_api_config(
 
             Ok(ApiResponse::ok("OK".to_string()))
         }
-        Err(e) => Err(ApiResponse::err(format!("{}", e))),
+        Err(e) => Err(ApiResponse::err(e.to_string())),
     }
 }
 
@@ -589,7 +588,7 @@ async fn test_api(
 
     match state.llm.test_connection(&provider, &api_key).await {
         Ok(_) => Ok(ApiResponse::ok("OK".to_string())),
-        Err(e) => Err(ApiResponse::err(format!("{}", e))),
+        Err(e) => Err(ApiResponse::err(e.to_string())),
     }
 }
 
@@ -666,14 +665,14 @@ async fn update_settings(
     // Validate retention_hours: 1-720 (1 hour to 30 days)
     let retention: u32 = body.retention_hours.parse()
         .map_err(|_| ApiResponse::<()>::err("Invalid retention value"))?;
-    if retention < 1 || retention > 720 {
+    if !(1..=720).contains(&retention) {
         return Err(ApiResponse::err("Retention must be between 1 and 720 hours"));
     }
 
     // Validate auto_update_interval: 1-72 hours
     let interval: u32 = body.auto_update_interval_hours.parse()
         .map_err(|_| ApiResponse::<()>::err("Invalid interval value"))?;
-    if interval < 1 || interval > 72 {
+    if !(1..=72).contains(&interval) {
         return Err(ApiResponse::err("Update interval must be between 1 and 72 hours"));
     }
 
@@ -962,7 +961,7 @@ async fn test_web_feed(
     let client = reqwest::Client::new();
     let (pattern, count) = web_feed::test_web_page(&client, &provider, &api_key, &body.url)
         .await
-        .map_err(|e| ApiResponse::<TestWebFeedResponse>::err(e))?;
+        .map_err(ApiResponse::<TestWebFeedResponse>::err)?;
 
     Ok(ApiResponse::ok(TestWebFeedResponse {
         pattern,

@@ -161,7 +161,7 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_test", "Scan testen");
     t.insert("web_feed_testing", "Scan läuft...");
     t.insert("web_feed_test_ok", "Scan erfolgreich");
-    t.insert("web_feed_no_articles", "Keine Artikel auf der Seite gefunden. Überprüfe, ob die URL korrekt ist und die Seite Links im Datumsformat enthält (Domain/jjjj/mm/tt/...).");
+    t.insert("web_feed_no_articles", "Keine Artikel auf der Seite gefunden. Überprüfe, ob die URL korrekt ist und die Seite Links im Datumsformat enthält.");
     t.insert("web_feed_articles_found", "Artikel gefunden");
     t.insert("web_feed_add", "Web-Feed hinzufügen");
     t.insert("web_rendering_not_configured", "Web-Rendering-API nicht konfiguriert. Konfiguriere sie auf der Seite API-Konfiguration.");
