@@ -42,7 +42,7 @@ impl LlmProvider {
             // Chat Completions (which is now considered a legacy path for GPT-5.x models)
             Self::OpenAI => "https://api.openai.com/v1/responses",
             Self::Claude => "https://api.anthropic.com/v1/messages",
-            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
         }
     }
 
@@ -58,7 +58,7 @@ impl LlmProvider {
             Self::OpenAI => "gpt-5.6-luna",
             // Fastest and most cost-effective Claude tier, ideal for simple summaries
             Self::Claude => "claude-haiku-4-5",
-            Self::Gemini => "gemini-3.5-flash",
+            Self::Gemini => "gemini-3.6-flash",
         }
     }
 

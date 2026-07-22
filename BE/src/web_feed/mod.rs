@@ -577,11 +577,12 @@ fn strip_prefix_marker_time(s: &str, lower: &str) -> Option<String> {
 
 /// Lightweight URL matcher for date-based article URLs.
 /// Avoids pulling in the `regex` crate as a dependency.
-/// Supports four date layouts observed across major publishers:
-/// 1. `/yyyy/mm/dd/slug`  — zero-padded numeric
-/// 2. `/yyyy/m/d/slug`    — non-padded numeric
-/// 3. `/yyyy/mmm/dd/slug` — 3-letter English month
-/// 4. `/yyyymmdd-slug`    — compact 8-digit date prefixing the slug
+/// Supports five date layouts observed across major publishers:
+/// 1. `/yyyy/mm/dd/slug`  — zero-padded numeric (e.g. NYT, Euronews)
+/// 2. `/yyyy/m/d/slug`    — non-padded numeric (e.g. Al Jazeera)
+/// 3. `/yyyy/mmm/dd/slug` — 3-letter English month (e.g. The Guardian "dec")
+/// 4. `/yyyymmdd-slug`    — compact 8-digit date prefixing the slug (e.g. France24)
+/// 5. `/yyyy-mm-dd/slug` or `/dd-mm-yyyy/slug` — hyphenated date as its own segment
 struct SimpleDateUrlMatcher;
 
 /// Captured groups from a date-based URL match.
@@ -624,9 +625,14 @@ impl SimpleDateUrlMatcher {
             }
         }
 
-        // Family 4: a single segment `yyyymmdd-slug` with a compact date prefix
-        for seg in &segments {
+        // Families 4-5: the date lives inside a single segment
+        for (idx, seg) in segments.iter().enumerate() {
+            // Family 4: compact `yyyymmdd-slug` prefix
             if let Some(caps) = Self::match_compact_date(seg) {
+                return Some(caps);
+            }
+            // Family 5: hyphenated date segment followed by a slug segment
+            if let Some(caps) = Self::match_hyphenated_date(seg, segments.get(idx + 1).copied()) {
                 return Some(caps);
             }
         }
@@ -669,6 +675,42 @@ impl SimpleDateUrlMatcher {
         let month_num = Self::parse_month(&segment[4..6])?;
         let day_num = Self::parse_day(&segment[6..8])?;
         let slug = &segment[9..];
+        Self::valid_slug(slug)?;
+
+        Some(UrlCaptures {
+            groups: [
+                year_num.to_string(),
+                format!("{:02}", month_num),
+                format!("{:02}", day_num),
+                slug.to_string(),
+            ],
+        })
+    }
+
+    /// Matches family 5: a date contained in a single hyphen-separated segment
+    /// followed by a slug segment — `/yyyy-mm-dd/slug` (ISO, year-first) or
+    /// `/dd-mm-yyyy/slug` (year-last, day-first). Year-last dates are always
+    /// read as day-month-year; month-day-year (US) layouts are not supported
+    /// because they cannot be told apart from day-month when both values <= 12.
+    fn match_hyphenated_date(segment: &str, next_segment: Option<&str>) -> Option<UrlCaptures> {
+        let parts: Vec<&str> = segment.split('-').collect();
+        if parts.len() != 3 {
+            return None;
+        }
+
+        // The position of the 4-digit year decides the layout
+        let (year_num, month_num, day_num) = if let Some(y) = Self::valid_year(parts[0]) {
+            // yyyy-mm-dd
+            (y, Self::parse_month(parts[1])?, Self::parse_day(parts[2])?)
+        } else if let Some(y) = Self::valid_year(parts[2]) {
+            // dd-mm-yyyy (day first)
+            (y, Self::parse_month(parts[1])?, Self::parse_day(parts[0])?)
+        } else {
+            return None;
+        };
+
+        // The slug is the following path segment
+        let slug = next_segment?;
         Self::valid_slug(slug)?;
 
         Some(UrlCaptures {

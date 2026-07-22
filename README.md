@@ -267,7 +267,7 @@ Newsletter feeds and their articles are included in feed exports and can be re-i
 
 ### Web feed monitoring
 
-MeigRSS can monitor web pages that don't have an RSS feed. Articles are discovered by scanning the page for links matching a date-based URL pattern (`domain/yyyy/mm/dd/slug`, `domain/yyyy/m/d/slug`, `domain/yyyy/mmm/dd/slug`, `domain/yyyymmdd-slug`), using an external JavaScript rendering service to handle dynamically loaded content.
+MeigRSS can monitor web pages that don't have an RSS feed. Articles are discovered by scanning the page for links matching a date-based URL pattern (`domain/yyyy/mm/dd/slug`, `domain/yyyy/m/d/slug`, `domain/yyyy/mmm/dd/slug`, `domain/yyyymmdd-slug`, `domain/yyyy-mm-dd/slug`, `domain/dd-mm-yyyy/slug`), using an external JavaScript rendering service to handle dynamically loaded content.
 
 #### Setting up the rendering API
 
@@ -328,7 +328,7 @@ MeigRSS supports four AI providers for summary generation:
 | **Mistral Large** | mistral-large-latest | Yes (Experiment) |
 | OpenAI | gpt-5.6-luna | No |
 | Claude | claude-haiku-4-5 | No |
-| Gemini | gemini-3.5-flash | Yes (with limits) |
+| Gemini | gemini-3.6-flash | Yes (with limits) |
 
 The summary prompt adapts to the UI language and to the model: Mistral Small generates shorter summaries (3-5 sentences, 500 chars) while other models generate longer ones (3-10 sentences, 1000 chars).
 
