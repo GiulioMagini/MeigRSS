@@ -13,6 +13,7 @@ mod i18n;
 mod llm;
 mod scraper;
 mod newsletter;
+mod opml;
 mod web_feed;
 
 use std::sync::Arc;

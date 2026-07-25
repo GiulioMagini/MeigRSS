@@ -30,8 +30,9 @@
     let webTestStatus = $state(null); // null | "loading" | "ok" | "error"
     let webTestedPattern = $state("");
     let webArticlesFound = $state(0);
+    // Mirrors what the successful test used, and stays editable before adding
+    let webUseApi = $state(false);
     let webTestError = $state("");
-    let webRenderingConfigured = $state(false);
 
     // Delete confirmation modal
     let showDeleteModal = $state(false);
@@ -60,17 +61,6 @@
         }
     }
 
-    async function checkWebRenderingConfig() {
-        try {
-            const res = await apiGet("/api/config/web-rendering");
-            if (res.success) {
-                webRenderingConfigured = res.data.is_configured;
-            }
-        } catch (e) {
-            webRenderingConfigured = false;
-        }
-    }
-
     async function testWebFeed() {
         if (!newUrl.trim()) return;
         webTestStatus = "loading";
@@ -82,14 +72,13 @@
             if (res.success) {
                 webTestedPattern = res.data.pattern;
                 webArticlesFound = res.data.articles_found;
+                webUseApi = res.data.is_api_scraping;
                 webTestStatus = "ok";
             }
         } catch (e) {
             webTestStatus = "error";
             const msg = e.message || "";
-            if (msg === "web_rendering_not_configured") {
-                webTestError = t("web_rendering_not_configured");
-            } else if (msg === "web_feed_no_articles") {
+            if (msg === "web_feed_no_articles") {
                 webTestError = t("web_feed_no_articles");
             } else if (msg.startsWith("web_rendering_test_failed:")) {
                 webTestError =
@@ -118,11 +107,13 @@
                 site_name: siteName,
                 category_id: parseInt(newCategory),
                 pattern: webTestedPattern,
+                is_api_scraping: webUseApi,
             });
             newUrl = "";
             webTestStatus = null;
             webTestedPattern = "";
             webArticlesFound = 0;
+            webUseApi = false;
             await loadFeeds();
         } catch (e) {
             const msg = e.message || "";
@@ -254,6 +245,20 @@
         }
     }
 
+    async function toggleApiScraping(feed) {
+        try {
+            const newValue = !feed.is_api_scraping;
+            await apiPut(`/api/feeds/${feed.id}/api-scraping`, {
+                enable: newValue,
+            });
+            feeds = feeds.map((f) =>
+                f.id === feed.id ? { ...f, is_api_scraping: newValue } : f,
+            );
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
     // Change the category of a feed
     async function changeFeedCategory(feed, newCategoryId) {
         try {
@@ -293,7 +298,6 @@
     onMount(async () => {
         await loadCategories();
         await loadFeeds();
-        await checkWebRenderingConfig();
     });
 </script>
 
@@ -322,10 +326,6 @@
             <button
                 class="mode-btn"
                 class:active={feedMode === "web"}
-                disabled={!webRenderingConfigured}
-                title={!webRenderingConfigured
-                    ? t("web_rendering_not_configured")
-                    : ""}
                 onclick={() => {
                     feedMode = "web";
                     testStatus = null;
@@ -425,6 +425,11 @@
                         )}</span
                     >
                 </div>
+
+                <label class="api-scraping-row">
+                    <input type="checkbox" bind:checked={webUseApi} />
+                    {t("feed_api_scraping")}
+                </label>
 
                 <div class="add-row">
                     <select bind:value={newCategory} class="input">
@@ -553,6 +558,15 @@
                         <button class="feed-action-btn" class:active={!feed.is_paused} onclick={() => togglePause(feed)}>
                             <span class="material-icons">{feed.is_paused ? 'pause_circle' : 'play_circle'}</span>
                             {feed.is_paused ? t('feed_paused') : t('feed_active')}
+                        </button>
+
+                        <button
+                            class="feed-action-btn"
+                            class:active={feed.is_api_scraping}
+                            onclick={() => toggleApiScraping(feed)}
+                        >
+                            <span class="material-icons">{feed.is_api_scraping ? 'cloud_done' : 'cloud_off'}</span>
+                            {t('feed_api_scraping')}
                         </button>
                     {/if}
 
@@ -1082,5 +1096,18 @@
     .feed-type-icon .material-icons {
         font-size: 1rem;
         color: #999;
+    }
+
+    .api-scraping-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.82rem;
+        color: #555;
+        cursor: pointer;
+        margin: 0.5rem 0;
+    }
+    .api-scraping-row input {
+        cursor: pointer;
     }
 </style>

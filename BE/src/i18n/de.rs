@@ -79,6 +79,7 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("feeds_auto_paused_message", "Die folgenden Feeds haben nicht geantwortet und wurden automatisch pausiert:");
     t.insert("feeds_auto_paused_hint", "Um sie zu entsperren, gehe zur Seite der Feed-Verwaltung.");
     t.insert("feed_enable_scraping", "Herunterladen des vollständigen Textes aktivieren");
+    t.insert("feed_api_scraping", "Scraping-API aktivieren");
     t.insert("scraping_disabled", "Herunterladen des vollständigen Textes für diesen Feed deaktiviert");
     t.insert("scraping_disclaimer", "Das Herunterladen des vollständigen Artikeltextes liegt im Ermessen des Nutzers. Stelle vor der Aktivierung sicher, dass du die Nutzungsbedingungen der betreffenden Website einhältst. Der Autor der Software haftet nicht für den missbräuchlichen Einsatz dieser Funktion.");
     t.insert("feed_delete", "Feed entfernen");
@@ -129,13 +130,15 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("no_internet_title", "Keine Verbindung");
     t.insert("no_internet_message", "Feeds können nicht aktualisiert werden: Überprüfe deine Internetverbindung und versuche es erneut.");
     t.insert("empty_feeds", "Keine Feeds konfiguriert.");
-    t.insert("import_description", "Wähle eine aus MeigRSS exportierte JSON-Datei aus.");
+    t.insert("import_description", "Wähle eine OPML-Datei oder eine aus MeigRSS exportierte JSON-Datei aus.");
     t.insert("back_home", "Zurück zur Startseite");
     t.insert("all_feeds_deleted", "Alle Feeds wurden gelöscht.");
     t.insert("import_confirm", "{count} Feeds in der Datei gefunden. Einige davon könnten Duplikate sein und werden daher nicht importiert. Fortfahren?");
     t.insert("import_favorites_count", "Einschließlich {count} Favoriten-Artikel.");
     t.insert("import_keep_original", "Ursprüngliche Kategorie beibehalten");
     t.insert("import_invalid_file", "Die ausgewählte Datei ist ungültig oder enthält keine Feeds.");
+    t.insert("export_format_label", "Wähle das Ausgabeformat");
+    t.insert("export_button", "Exportieren");
 
     // Newsletter
     t.insert("menu_import_newsletter", "Newsletter importieren");
@@ -164,7 +167,6 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_no_articles", "Keine Artikel auf der Seite gefunden. Überprüfe, ob die URL korrekt ist und die Seite Links im Datumsformat enthält.");
     t.insert("web_feed_articles_found", "Artikel gefunden");
     t.insert("web_feed_add", "Web-Feed hinzufügen");
-    t.insert("web_rendering_not_configured", "Web-Rendering-API nicht konfiguriert. Konfiguriere sie auf der Seite API-Konfiguration.");
     t.insert("web_rendering_test_failed", "Test der Rendering-API fehlgeschlagen: ");
     t.insert("web_rendering_section_title", "Web-Rendering-API");
     t.insert("web_rendering_provider", "Anbieter");

@@ -55,6 +55,7 @@ impl Database {
                 is_paused        INTEGER NOT NULL DEFAULT 0,  -- 1 = skip this feed during updates
                 is_web_feed      INTEGER NOT NULL DEFAULT 0,
                 web_feed_pattern TEXT NOT NULL DEFAULT '',
+                is_api_scraping  INTEGER NOT NULL DEFAULT 0,  -- 1 = fetch via rendering API, 0 = plain GET
                 created_at       TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (category_id) REFERENCES categories(id)
             );
@@ -110,6 +111,27 @@ impl Database {
             "
         )?;
 
+        // Migration: databases created before web feeds could work without a
+        // rendering API have no is_api_scraping column
+        let has_api_scraping = {
+            let mut stmt = conn.prepare(
+                "SELECT 1 FROM pragma_table_info('feeds') WHERE name = 'is_api_scraping'",
+            )?;
+            stmt.exists([])?
+        };
+        if !has_api_scraping {
+            conn.execute(
+                "ALTER TABLE feeds ADD COLUMN is_api_scraping INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+            // Existing web feeds were created when the rendering API was the
+            // only option, so keep them on it to preserve their behaviour
+            conn.execute(
+                "UPDATE feeds SET is_api_scraping = 1 WHERE is_web_feed = 1",
+                [],
+            )?;
+        }
+
         // Ensure the default category exists
         conn.execute(
             "INSERT OR IGNORE INTO categories (name, is_default) VALUES (?1, 1)",
@@ -126,7 +148,7 @@ impl Database {
         let default_settings = vec![
             ("retention_hours", "24"),           // default 1 day
             ("auto_update_enabled", "false"),    // default no auto update
-            ("auto_update_interval_hours", "1"), // default refresh every 2 hours
+            ("auto_update_interval_hours", "1"), // default refresh every 1 hour
             ("highlight_keywords", ""),          // keywords to be highlighted
             ("language", "auto"),                // 'auto', 'it', 'en'
         ];

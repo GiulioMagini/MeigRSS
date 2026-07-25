@@ -125,6 +125,7 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("feeds_auto_paused_message", "I seguenti feed non hanno risposto e sono stati messi in pausa automaticamente:");
     t.insert("feeds_auto_paused_hint", "Per sbloccarli, vai nella pagina di gestione dei feed.");
     t.insert("feed_enable_scraping", "Abilita scaricamento testo completo");
+    t.insert("feed_api_scraping", "Abilita API scraping");
     t.insert("scraping_disabled", "Scaricamento testo completo disabilitato per questo feed");
     t.insert("scraping_disclaimer", "Lo scaricamento del testo completo degli articoli è a discrezione dell'utente. Prima di attivarlo, assicurati di rispettare i termini di utilizzo del sito in questione. L'autore del software non è responsabile dell'uso improprio di questa funzionalità.");
     t.insert("feed_delete", "Rimuovi feed");
@@ -175,13 +176,15 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("no_internet_title", "Connessione assente");
     t.insert("no_internet_message", "Impossibile aggiornare i feed: verifica la tua connessione a internet e riprova.");
     t.insert("empty_feeds", "Nessun feed configurato.");
-    t.insert("import_description", "Seleziona un file JSON esportato da MeigRSS.");
+    t.insert("import_description", "Seleziona un file OPML oppure un file JSON esportato da MeigRSS.");
     t.insert("back_home", "Torna alla home");
     t.insert("all_feeds_deleted", "Tutti i feed sono stati eliminati.");
     t.insert("import_confirm", "Trovati {count} feed nel file. Alcuni di questi potrebbero essere duplicati, quindi non verranno importati. Procedere?");
     t.insert("import_favorites_count", "Inclusi {count} articoli preferiti.");
     t.insert("import_keep_original", "Mantieni la categoria originale");
     t.insert("import_invalid_file", "Il file selezionato non è valido o non contiene feed.");
+    t.insert("export_format_label", "Seleziona il formato di output");
+    t.insert("export_button", "Esporta");
 
     // Newsletter
     t.insert("menu_import_newsletter", "Importa newsletter");
@@ -210,7 +213,6 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_no_articles", "Nessun articolo trovato nella pagina. Verifica che l'URL sia corretto e che la pagina contenga link con formato data.");
     t.insert("web_feed_articles_found", "articoli trovati");
     t.insert("web_feed_add", "Aggiungi web feed");
-    t.insert("web_rendering_not_configured", "API di rendering web non configurata. Configurala nella pagina Configurazione API.");
     t.insert("web_rendering_test_failed", "Test API di rendering fallito: ");
     t.insert("web_rendering_section_title", "API Rendering Web");
     t.insert("web_rendering_provider", "Provider");
@@ -311,6 +313,7 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("feeds_auto_paused_message", "The following feeds did not respond and have been automatically paused:");
     t.insert("feeds_auto_paused_hint", "To resume them, go to the feed management page.");
     t.insert("feed_enable_scraping", "Enable full text download");
+    t.insert("feed_api_scraping", "Enable scraping API");
     t.insert("scraping_disabled", "Full text download is disabled for this feed");
     t.insert("scraping_disclaimer", "Downloading the full text of articles is at the user's discretion. Before enabling it, make sure you comply with the terms of use of the website in question. The software author is not responsible for any misuse of this feature.");
     t.insert("feed_delete", "Remove feed");
@@ -358,13 +361,15 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("no_internet_title", "No internet connection");
     t.insert("no_internet_message", "Unable to update feeds: check your internet connection and try again.");
     t.insert("empty_feeds", "No feeds configured.");
-    t.insert("import_description", "Select a JSON file exported from MeigRSS.");
+    t.insert("import_description", "Select an OPML file or a JSON file exported from MeigRSS.");
     t.insert("back_home", "Back to home");
     t.insert("all_feeds_deleted", "All feeds have been deleted.");
     t.insert("import_confirm", "Found {count} feeds in the file. Some of this feed could be duplicates, in that case they will not be inserted again. Proceed?");
     t.insert("import_favorites_count", "Including {count} favorite articles.");
     t.insert("import_keep_original", "Keep original category");
     t.insert("import_invalid_file", "The selected file is not valid or contains no feeds.");
+    t.insert("export_format_label", "Select the output format");
+    t.insert("export_button", "Export");
 
     // Newsletter
     t.insert("menu_import_newsletter", "Import newsletter");
@@ -393,7 +398,6 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_no_articles", "No articles found on the page. Verify the URL is correct and the page contains date-patterned links.");
     t.insert("web_feed_articles_found", "articles found");
     t.insert("web_feed_add", "Add web feed");
-    t.insert("web_rendering_not_configured", "Web rendering API not configured. Set it up in the API Configuration page.");
     t.insert("web_rendering_test_failed", "Rendering API test failed: ");
     t.insert("web_rendering_section_title", "Web Rendering API");
     t.insert("web_rendering_provider", "Provider");

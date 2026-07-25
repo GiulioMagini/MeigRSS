@@ -1,6 +1,6 @@
 [package]
 name = "meigrss"
-version = "1.1.0"
+version = "2.0.0"
 edition = "2024"
 description = "MeigRSS - Your personal news feed aggregator with AI summaries"
 authors = ["Giulio Magini"]
@@ -17,6 +17,9 @@ tower-http = { version = "0.7", features = ["cors", "set-header"] }
 
 # RSS parsing
 feed-rs = "2.4"
+
+# XML parsing for OPML import
+quick-xml = "0.41"
 
 # HTTP client for fetching feeds and articles
 reqwest = { version = "0.13", features = ["json"] }

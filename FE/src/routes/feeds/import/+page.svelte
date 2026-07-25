@@ -29,6 +29,28 @@
 
         try {
             const text = await file.text();
+
+            // OPML is XML, so a leading angle bracket tells the two apart.
+            // Parsing is delegated to the backend, which owns the format.
+            if (text.trimStart().startsWith("<")) {
+                setLoading(true);
+                try {
+                    const res = await apiPost("/api/feeds/import/opml", { opml: text });
+                    if (res.success) {
+                        parsedData = res.data;
+                        parsedFeeds = res.data.feeds;
+                        feedCount = res.data.feeds.length;
+                        favCount = 0;
+                        showConfirm = true;
+                    }
+                } catch (err) {
+                    fileError = err.message || t("import_invalid_file");
+                } finally {
+                    setLoading(false);
+                }
+                return;
+            }
+            
             const data = JSON.parse(text);
 
             // Support both new format { categories, feeds } and legacy format (array of feeds)
@@ -114,7 +136,7 @@
 
     <div class="card">
         <p class="desc">{t("import_description")}</p>
-        <input type="file" accept=".json" onchange={handleFile} />
+        <input type="file" accept=".json,.opml,.xml" onchange={handleFile} />
 
         {#if fileError}
             <p class="error-msg">

@@ -33,13 +33,14 @@ pub struct ExtractedLink {
 
 // ─── Core flow methods ────────────────────────────────────────────────
 
-/// Fetches the rendered HTML of a web page using the configured rendering API,
-/// then extracts article links matching the date-based URL pattern.
+/// Fetches the HTML of a web page and extracts the article links matching the
+/// date-based URL pattern. When `rendering` is Some the page goes through the
+/// rendering API, which executes its JavaScript; when None it is fetched with
+/// a plain GET, which is free but only sees server-rendered content.
 /// Returns the list of extracted links or an error message.
 pub async fn scan_web_page(
     client: &Client,
-    provider: &WebRenderingProvider,
-    api_key: &str,
+    rendering: Option<(&WebRenderingProvider, &str)>,
     page_url: &str,
     pattern: &str,
 ) -> Result<Vec<ExtractedLink>, String> {
@@ -48,41 +49,26 @@ pub async fn scan_web_page(
     // "//x" paths instead of fully-qualified URLs).
     let base_url = Url::parse(page_url).map_err(|e| format!("Invalid page URL: {}", e))?;
 
-    let render_url = provider.render_url(api_key, page_url);
-
-    let response = client
-        .get(&render_url)
-        .timeout(std::time::Duration::from_secs(60))
-        .send()
-        .await
-        // without_url() strips the request URL (which contains the API key)
-        // from the error message before it reaches logs or the frontend
-        .map_err(|e| format!("Rendering API request failed: {}", e.without_url()))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Rendering API returned {}: {}", status, body));
-    }
-
-    let html = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read rendered HTML: {}", e))?;
+    let html = match rendering {
+        Some((provider, api_key)) => {
+            fetch_via_rendering_api(client, provider, api_key, page_url).await?
+        }
+        None => fetch_direct(client, page_url).await?,
+    };
 
     Ok(extract_links_from_html(&html, pattern, &base_url))
 }
 
-/// Tests a web page scan: calls the rendering API and checks if at least
-/// one article link is found. Returns the extracted domain pattern on success.
+/// Tests a web page scan and checks that at least one article link is found.
+/// Returns the extracted domain pattern on success. The caller decides whether
+/// to go through the rendering API or a plain GET.
 pub async fn test_web_page(
     client: &Client,
-    provider: &WebRenderingProvider,
-    api_key: &str,
+    rendering: Option<(&WebRenderingProvider, &str)>,
     page_url: &str,
 ) -> Result<(String, usize), String> {
     let pattern = extract_domain_pattern(page_url)?;
-    let links = scan_web_page(client, provider, api_key, page_url, &pattern).await?;
+    let links = scan_web_page(client, rendering, page_url, &pattern).await?;
 
     if links.is_empty() {
         return Err("web_feed_no_articles".to_string());
@@ -119,10 +105,9 @@ pub async fn test_rendering_api(
 /// Refreshes all active web feeds: fetches rendered HTML, extracts new links,
 /// and inserts them as articles. Runs separately from RSS feed refresh.
 pub async fn refresh_web_feeds(db: &Database) -> Vec<WebFeedRefreshResult> {
-    let (provider, api_key) = match load_rendering_config(db) {
-        Some(config) => config,
-        None => return vec![],
-    };
+    // The rendering API is optional now that feeds can be fetched with a plain
+    // GET, so a missing configuration no longer skips every web feed
+    let rendering_config = load_rendering_config(db);
 
     let feeds = match db.get_active_web_feeds() {
         Ok(f) => f,
@@ -140,7 +125,10 @@ pub async fn refresh_web_feeds(db: &Database) -> Vec<WebFeedRefreshResult> {
     let mut results = Vec::new();
 
     for feed in &feeds {
-        let result = refresh_single_web_feed(&client, &provider, &api_key, feed, db).await;
+        // Each feed chooses its own fetch mode, with a fallback when the API
+        // is requested but not configured
+        let rendering = resolve_rendering(feed, rendering_config.as_ref());
+        let result = refresh_single_web_feed(&client, rendering, feed, db).await;
         results.push(result);
     }
 
@@ -152,12 +140,11 @@ pub async fn refresh_web_feeds(db: &Database) -> Vec<WebFeedRefreshResult> {
 /// Refreshes a single web feed: scans the page and inserts new articles.
 async fn refresh_single_web_feed(
     client: &Client,
-    provider: &WebRenderingProvider,
-    api_key: &str,
+    rendering: Option<(&WebRenderingProvider, &str)>,
     feed: &Feed,
     db: &Database,
 ) -> WebFeedRefreshResult {
-    let links = match scan_web_page(client, provider, api_key, &feed.url, &feed.web_feed_pattern).await {
+    let links = match scan_web_page(client, rendering, &feed.url, &feed.web_feed_pattern).await {
         Ok(l) => l,
         Err(e) => {
             tracing::warn!("Web feed '{}' scan failed: {}", feed.site_name, e);
@@ -275,6 +262,95 @@ fn load_rendering_config(db: &Database) -> Option<(WebRenderingProvider, String)
     let provider = WebRenderingProvider::from_str(&provider_str)?;
 
     Some((provider, api_key))
+}
+
+/// Browser-like User-Agent used for direct fetches. Many sites answer 403 to
+/// requests that do not send one, which would make the free mode useless.
+const DIRECT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+    AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+/// Decides how a web feed should be fetched: through the rendering API when
+/// the feed asks for it and the API is configured, otherwise with a plain GET.
+/// The fallback is logged so the user understands why a feed changed behaviour.
+fn resolve_rendering<'a>(
+    feed: &Feed,
+    config: Option<&'a (WebRenderingProvider, String)>,
+) -> Option<(&'a WebRenderingProvider, &'a str)> {
+    if !feed.is_api_scraping {
+        return None;
+    }
+
+    match config {
+        Some((provider, api_key)) => Some((provider, api_key.as_str())),
+        None => {
+            if crate::is_system_italian() {
+                tracing::warn!(
+                    "Feed '{}': API di scraping abilitata ma non configurata, si procede con una GET diretta",
+                    feed.site_name
+                );
+            } else {
+                tracing::warn!(
+                    "Feed '{}': scraping API enabled but not configured, falling back to a direct GET",
+                    feed.site_name
+                );
+            }
+            None
+        }
+    }
+}
+
+/// Fetches a page through the rendering API, which executes the page's
+/// JavaScript before returning the HTML.
+async fn fetch_via_rendering_api(
+    client: &Client,
+    provider: &WebRenderingProvider,
+    api_key: &str,
+    page_url: &str,
+) -> Result<String, String> {
+    let render_url = provider.render_url(api_key, page_url);
+
+    let response = client
+        .get(&render_url)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await
+        // without_url() strips the request URL (which contains the API key)
+        // from the error message before it reaches logs or the frontend
+        .map_err(|e| format!("Rendering API request failed: {}", e.without_url()))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Rendering API returned {}: {}", status, body));
+    }
+
+    response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read rendered HTML: {}", e))
+}
+
+/// Fetches a page with a plain GET, without executing JavaScript.
+/// Costs nothing and works on server-rendered sites, but returns only the
+/// initial HTML: pages that build their article list client-side yield no links.
+async fn fetch_direct(client: &Client, page_url: &str) -> Result<String, String> {
+    let response = client
+        .get(page_url)
+        .header(reqwest::header::USER_AGENT, DIRECT_USER_AGENT)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .map_err(|e| format!("Page request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Page returned {}", status));
+    }
+
+    response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read page HTML: {}", e))
 }
 
 /// Extracts the base domain from a URL to build the date-based pattern.

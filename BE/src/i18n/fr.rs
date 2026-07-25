@@ -79,6 +79,7 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("feeds_auto_paused_message", "Les flux suivants n'ont pas répondu et ont été mis en pause automatiquement :");
     t.insert("feeds_auto_paused_hint", "Pour les débloquer, va dans la page de gestion des flux.");
     t.insert("feed_enable_scraping", "Activer le téléchargement du texte complet");
+    t.insert("feed_api_scraping", "Activer l'API de scraping");
     t.insert("scraping_disabled", "Téléchargement du texte complet désactivé pour ce flux");
     t.insert("scraping_disclaimer", "Le téléchargement du texte complet des articles est à la discrétion de l'utilisateur. Avant de l'activer, assure-toi de respecter les conditions d'utilisation du site concerné. L'auteur du logiciel n'est pas responsable de l'usage abusif de cette fonctionnalité.");
     t.insert("feed_delete", "Supprimer le flux");
@@ -129,13 +130,15 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("no_internet_title", "Connexion absente");
     t.insert("no_internet_message", "Impossible d'actualiser les flux : vérifie ta connexion internet et réessaie.");
     t.insert("empty_feeds", "Aucun flux configuré.");
-    t.insert("import_description", "Sélectionne un fichier JSON exporté depuis MeigRSS.");
+    t.insert("import_description", "Sélectionne un fichier OPML ou un fichier JSON exporté depuis MeigRSS.");
     t.insert("back_home", "Retour à l'accueil");
     t.insert("all_feeds_deleted", "Tous les flux ont été supprimés.");
     t.insert("import_confirm", "{count} flux trouvés dans le fichier. Certains peuvent être des doublons et ne seront donc pas importés. Continuer ?");
     t.insert("import_favorites_count", "Y compris {count} articles favoris.");
     t.insert("import_keep_original", "Conserver la catégorie d'origine");
     t.insert("import_invalid_file", "Le fichier sélectionné n'est pas valide ou ne contient pas de flux.");
+    t.insert("export_format_label", "Sélectionne le format de sortie");
+    t.insert("export_button", "Exporter");
 
     // Newsletter
     t.insert("menu_import_newsletter", "Importer une newsletter");
@@ -164,7 +167,6 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("web_feed_no_articles", "Aucun article trouvé dans la page. Vérifie que l'URL est correcte et que la page contient des liens au format date.");
     t.insert("web_feed_articles_found", "articles trouvés");
     t.insert("web_feed_add", "Ajouter un web feed");
-    t.insert("web_rendering_not_configured", "API de rendu web non configurée. Configure-la dans la page Configuration API.");
     t.insert("web_rendering_test_failed", "Échec du test de l'API de rendu : ");
     t.insert("web_rendering_section_title", "API de rendu web");
     t.insert("web_rendering_provider", "Fournisseur");

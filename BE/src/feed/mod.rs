@@ -393,6 +393,11 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
         if feed.is_web_feed {
             continue;
         }
+        // Skip newsletter containers: the "newsletter://" URL is internal and
+        // groups articles imported from EML files, there is nothing to fetch
+        if feed.url.starts_with("newsletter://") {
+            continue;
+        }
         // Determine the start date: the more recent between
         // the retention cutoff and the latest article already in DB
         let start_from = match db.get_latest_article_date(feed.id) {

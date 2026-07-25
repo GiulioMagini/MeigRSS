@@ -23,6 +23,7 @@ pub struct Feed {
     pub is_paused: bool,
     pub is_web_feed: bool,
     pub web_feed_pattern: String,
+    pub is_api_scraping: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -96,6 +97,9 @@ pub struct FeedExport {
     pub is_paused: bool,
     pub is_web_feed: bool,
     pub web_feed_pattern: String,
+    // Defaulted so JSON files exported before this option existed still import
+    #[serde(default)]
+    pub is_api_scraping: bool,
 }
 
 /// Complete export structure including categories and feeds.
@@ -220,7 +224,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, 
-            is_web_feed, web_feed_pattern FROM feeds ORDER BY site_name ASC"
+            is_web_feed, web_feed_pattern, is_api_scraping FROM feeds ORDER BY site_name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(Feed {
@@ -234,6 +238,7 @@ impl Database {
                 is_paused: row.get::<_, i64>(7)? == 1,
                 is_web_feed: row.get::<_, i64>(8)? == 1,
                 web_feed_pattern: row.get(9)?,
+                is_api_scraping: row.get::<_, i64>(10)? == 1,
             })
         })?;
         rows.collect()
@@ -317,6 +322,17 @@ impl Database {
         )
     }
 
+    /// Enables or disables fetching this web feed through the rendering API.
+    /// When disabled the page is fetched with a plain GET, which costs nothing
+    /// but cannot execute the page's JavaScript.
+    pub fn set_feed_api_scraping(&self, feed_id: i64, enable: bool) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE feeds SET is_api_scraping = ?1 WHERE id = ?2",
+            params![enable as i64, feed_id],
+        )
+    }
+
     /// When force_ai_summary is disabled, restore feed summaries for articles
     /// that have summary text but were marked as "none" (waiting for LLM).
     pub fn restore_feed_summaries(&self, feed_id: i64) -> Result<usize> {
@@ -341,7 +357,7 @@ impl Database {
     pub fn export_feeds(&self) -> Result<Vec<FeedExport>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT f.url, f.title, f.site_name, c.name, f.force_ai_summary, f.enable_scraping, f.is_paused, f.is_web_feed, f.web_feed_pattern
+            "SELECT f.url, f.title, f.site_name, c.name, f.force_ai_summary, f.enable_scraping, f.is_paused, f.is_web_feed, f.web_feed_pattern, f.is_api_scraping
              FROM feeds f
              JOIN categories c ON f.category_id = c.id
              ORDER BY c.name, f.site_name"
@@ -357,6 +373,7 @@ impl Database {
                 is_paused: row.get::<_, i64>(6)? == 1,
                 is_web_feed: row.get::<_, i64>(7)? == 1,
                 web_feed_pattern: row.get(8)?,
+                is_api_scraping: row.get::<_, i64>(9)? == 1,
             })
         })?;
         rows.collect()
@@ -374,6 +391,17 @@ impl Database {
             })
         })?;
         rows.collect()
+    }
+
+    /// Returns the name of the default, non-deletable category used for feeds
+    /// with no explicit category, such as top-level OPML outlines.
+    pub fn default_category_name(&self) -> Result<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT name FROM categories WHERE is_default = 1 AND name != 'Newsletter' LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
     }
 
     /// Exports the application settings.
@@ -507,8 +535,8 @@ impl Database {
 
             // Insert feed, skip if URL already exists
             let result = conn.execute(
-                "INSERT OR IGNORE INTO feeds (url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT OR IGNORE INTO feeds (url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     feed.url,
                     feed.title,
@@ -518,7 +546,8 @@ impl Database {
                     feed.enable_scraping as i64,
                     feed.is_paused as i64,
                     feed.is_web_feed as i64,
-                    feed.web_feed_pattern
+                    feed.web_feed_pattern,
+                    feed.is_api_scraping as i64
                 ],
             )?;
             if result > 0 {
@@ -679,7 +708,7 @@ impl Database {
     pub fn get_newsletter_feeds(&self) -> Result<Vec<Feed>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern
+            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping
              FROM feeds WHERE url LIKE 'newsletter://%' ORDER BY site_name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -694,6 +723,7 @@ impl Database {
                 is_paused: row.get::<_, i64>(7)? == 1,
                 is_web_feed: row.get::<_, i64>(8)? == 1,
                 web_feed_pattern: row.get(9)?,
+                is_api_scraping: row.get::<_, i64>(10)? == 1,
             })
         })?;
         rows.collect()
@@ -980,12 +1010,13 @@ impl Database {
         site_name: &str,
         category_id: i64,
         web_feed_pattern: &str,
+        is_api_scraping: bool,
     ) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO feeds (url, title, site_name, category_id, enable_scraping, is_web_feed, web_feed_pattern)
-             VALUES (?1, ?2, ?3, ?4, 1, 1, ?5)",
-            params![url, site_name, site_name, category_id, web_feed_pattern],
+            "INSERT INTO feeds (url, title, site_name, category_id, enable_scraping, is_web_feed, web_feed_pattern, is_api_scraping)
+             VALUES (?1, ?2, ?3, ?4, 1, 1, ?5, ?6)",
+            params![url, site_name, site_name, category_id, web_feed_pattern, is_api_scraping as i64],
         )?;
         Ok(conn.last_insert_rowid())
     }
@@ -994,7 +1025,7 @@ impl Database {
     pub fn get_active_web_feeds(&self) -> Result<Vec<Feed>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern
+            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping
              FROM feeds WHERE is_web_feed = 1 AND is_paused = 0 ORDER BY site_name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -1009,6 +1040,7 @@ impl Database {
                 is_paused: row.get::<_, i64>(7)? == 1,
                 is_web_feed: row.get::<_, i64>(8)? == 1,
                 web_feed_pattern: row.get(9)?,
+                is_api_scraping: row.get::<_, i64>(10)? == 1,
             })
         })?;
         rows.collect()

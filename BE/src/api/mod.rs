@@ -16,6 +16,7 @@ use crate::newsletter;
 use crate::llm::LlmClient;
 use crate::i18n;
 use crate::web_feed;
+use crate::opml;
 
 /// Shared application state passed to all route handlers.
 pub struct AppState {
@@ -39,11 +40,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/feeds/{id}/force-ai", put(set_feed_force_ai))
         .route("/api/feeds/{id}/scraping", put(set_feed_scraping))
         .route("/api/feeds/{id}/pause", put(set_feed_paused))
+        .route("/api/feeds/{id}/api-scraping", put(set_feed_api_scraping))
         .route("/api/feeds/{id}/category", put(change_feed_category))
         .route("/api/feeds/test", post(test_feed))
         .route("/api/feeds/refresh", post(refresh_feeds))
         .route("/api/feeds/export", get(export_feeds))
+        .route("/api/feeds/export/opml", get(export_feeds_opml))
         .route("/api/feeds/import", post(import_feeds))
+        .route("/api/feeds/import/opml", post(parse_feeds_opml))
         .route("/api/newsletter/import", post(import_newsletter))
         .route("/api/newsletter/preview", post(preview_newsletter))
         .route("/api/newsletter/feeds", get(get_newsletter_feeds))
@@ -341,6 +345,24 @@ async fn set_feed_paused(
 }
 
 #[derive(Deserialize)]
+struct ApiScrapingRequest {
+    enable: bool,
+}
+
+/// PUT /api/feeds/{id}/api-scraping - Toggle the rendering API for a web feed.
+/// When disabled the page is fetched with a plain GET instead.
+async fn set_feed_api_scraping(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<ApiScrapingRequest>,
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
+    match state.db.set_feed_api_scraping(id, body.enable) {
+        Ok(_) => Ok(ApiResponse::ok(())),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+#[derive(Deserialize)]
 struct ChangeCategoryRequest {
     category_id: i64,
 }
@@ -429,6 +451,52 @@ async fn import_feeds(
     }
 
     Ok(ApiResponse::ok(db::ImportResult { feeds_imported, favorites_imported }))
+}
+
+/// GET /api/feeds/export/opml - Export all categories and feeds as OPML 2.0
+async fn export_feeds_opml(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<String>>, (StatusCode, Json<ApiResponse<String>>)> {
+    let categories = state.db.export_categories()
+        .map_err(|e| ApiResponse::<String>::internal_err(format!("Database error: {}", e)))?;
+    let feeds = state.db.export_feeds()
+        .map_err(|e| ApiResponse::<String>::internal_err(format!("Database error: {}", e)))?;
+
+    // OPML has no equivalent for favorites and settings, so they stay empty;
+    // the JSON export remains the full-fidelity format
+    let export = db::FullExport {
+        categories,
+        feeds,
+        favorites: Vec::new(),
+        settings: None,
+    };
+
+    Ok(ApiResponse::ok(opml::build_opml(&export)))
+}
+
+/// Request body for OPML parsing: the raw file content as text.
+#[derive(Deserialize)]
+struct OpmlImportRequest {
+    opml: String,
+}
+
+/// POST /api/feeds/import/opml - Convert an uploaded OPML file into the
+/// internal import structure. This deliberately does not write to the
+/// database: the frontend shows the confirmation and category selector, then
+/// posts the result to /api/feeds/import, so OPML and JSON imports share a
+/// single write path.
+async fn parse_feeds_opml(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<OpmlImportRequest>,
+) -> Result<Json<ApiResponse<db::FullExport>>, (StatusCode, Json<ApiResponse<db::FullExport>>)> {
+    // Outlines outside any folder land in the default category
+    let default_category = state.db.default_category_name()
+        .map_err(|e| ApiResponse::<db::FullExport>::internal_err(format!("Database error: {}", e)))?;
+
+    match opml::parse_opml(&body.opml, &default_category) {
+        Ok(parsed) => Ok(ApiResponse::ok(parsed)),
+        Err(e) => Err(ApiResponse::<db::FullExport>::err(e)),
+    }
 }
 
 // ─── Category handlers ─────────────────────────────────────────────────────
@@ -935,6 +1003,9 @@ struct TestWebFeedRequest {
 struct TestWebFeedResponse {
     pattern: String,
     articles_found: usize,
+    // Tells the frontend which mode the successful test used, so the new feed
+    // starts out matching the behaviour the user has just seen working
+    is_api_scraping: bool,
 }
 
 /// POST /api/web-feed/test - Test a web page scan before adding as web feed
@@ -942,30 +1013,35 @@ async fn test_web_feed(
     State(state): State<Arc<AppState>>,
     Json(body): Json<TestWebFeedRequest>,
 ) -> Result<Json<ApiResponse<TestWebFeedResponse>>, (StatusCode, Json<ApiResponse<TestWebFeedResponse>>)> {
-    // Ensure web rendering API is configured
-    let (provider_str, encrypted_key, iv) = state.db
+    // The rendering API is optional: when it is not configured the page is
+    // fetched with a plain GET, which works on server-rendered sites
+    let config = state.db
         .get_web_rendering_config()
-        .map_err(|e| ApiResponse::<TestWebFeedResponse>::internal_err(format!("DB error: {}", e)))?
-        .ok_or_else(|| ApiResponse::<TestWebFeedResponse>::err("web_rendering_not_configured"))?;
+        .map_err(|e| ApiResponse::<TestWebFeedResponse>::internal_err(format!("DB error: {}", e)))?;
 
-    if encrypted_key.is_empty() {
-        return Err(ApiResponse::err("web_rendering_not_configured"));
+    let mut rendering: Option<(WebRenderingProvider, String)> = None;
+    if let Some((provider_str, encrypted_key, iv)) = config
+        && !encrypted_key.is_empty()
+    {
+        let api_key = encryption::decrypt_api_key(&encrypted_key, &iv)
+            .map_err(|e| ApiResponse::<TestWebFeedResponse>::err(format!("Decryption error: {}", e)))?;
+        let provider = WebRenderingProvider::from_str(&provider_str)
+            .ok_or_else(|| ApiResponse::<TestWebFeedResponse>::err("Unknown web rendering provider"))?;
+        rendering = Some((provider, api_key));
     }
 
-    let api_key = encryption::decrypt_api_key(&encrypted_key, &iv)
-        .map_err(|e| ApiResponse::<TestWebFeedResponse>::err(format!("Decryption error: {}", e)))?;
-
-    let provider = WebRenderingProvider::from_str(&provider_str)
-        .ok_or_else(|| ApiResponse::<TestWebFeedResponse>::err("Unknown web rendering provider"))?;
+    let used_api = rendering.is_some();
+    let rendering_ref = rendering.as_ref().map(|(p, k)| (p, k.as_str()));
 
     let client = reqwest::Client::new();
-    let (pattern, count) = web_feed::test_web_page(&client, &provider, &api_key, &body.url)
+    let (pattern, count) = web_feed::test_web_page(&client, rendering_ref, &body.url)
         .await
         .map_err(ApiResponse::<TestWebFeedResponse>::err)?;
 
     Ok(ApiResponse::ok(TestWebFeedResponse {
         pattern,
         articles_found: count,
+        is_api_scraping: used_api,
     }))
 }
 
@@ -975,6 +1051,9 @@ struct AddWebFeedRequest {
     site_name: String,
     category_id: i64,
     pattern: String,
+    // Defaulted so a request without the field keeps the free fetch mode
+    #[serde(default)]
+    is_api_scraping: bool,
 }
 
 /// POST /api/web-feed - Add a new web feed (must have been tested first)
@@ -982,7 +1061,13 @@ async fn add_web_feed(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AddWebFeedRequest>,
 ) -> Result<Json<ApiResponse<i64>>, (StatusCode, Json<ApiResponse<i64>>)> {
-    match state.db.add_web_feed(&body.url, &body.site_name, body.category_id, &body.pattern) {
+    match state.db.add_web_feed(
+        &body.url,
+        &body.site_name,
+        body.category_id,
+        &body.pattern,
+        body.is_api_scraping,
+    ) {
         Ok(id) => Ok(ApiResponse::ok(id)),
         Err(e) => {
             let msg = format!("{}", e);
