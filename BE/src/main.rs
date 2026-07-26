@@ -65,10 +65,21 @@ fn serve_embedded_file(file_path: &str) -> Response {
                 .first_or_octet_stream()
                 .to_string();
 
+            // Cache policy: SvelteKit emits content-hashed bundles under
+            // _app/immutable/, whose file names change on every build, so they
+            // can be cached indefinitely. Everything else — index.html above
+            // all — must be revalidated, otherwise a rebuilt frontend keeps
+            // being served from the browser cache
+            let cache_control = if clean_path.starts_with("_app/immutable/") {
+                "public, max-age=31536000, immutable"
+            } else {
+                "no-cache"
+            };
+
             let mut builder = Response::builder()
                 .status(StatusCode::OK)
                 .header(header::CONTENT_TYPE, &mime_type)
-                .header(header::CACHE_CONTROL, "public, max-age=86400")
+                .header(header::CACHE_CONTROL, cache_control)
                 .header("X-Content-Type-Options", "nosniff")
                 .header("X-Frame-Options", "DENY")
                 .header("X-XSS-Protection", "1; mode=block")
@@ -102,6 +113,9 @@ fn serve_embedded_file(file_path: &str) -> Response {
                 Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "text/html")
+                    // Same reasoning as above: the SPA shell must always be
+                    // revalidated before being reused
+                    .header(header::CACHE_CONTROL, "no-cache")
                     .header("X-Content-Type-Options", "nosniff")
                     .header("X-Frame-Options", "DENY")
                     .header("X-XSS-Protection", "1; mode=block")

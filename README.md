@@ -64,14 +64,14 @@ npm install
 npm run build
 ```
 
-Copy the generated files into the backend's `static` folder:
+Copy the generated files into the backend's `static` folder (folder substitution):
 
 ```bash
 # Linux / macOS
-cp -r build ../BE/static
+rm -rf ../BE/static && cp -r build ../BE/static
 
 # Windows (PowerShell)
-Copy-Item -Recurse build ..\BE\static
+Remove-Item -Recurse -Force ..\BE\static; Copy-Item -Recurse build ..\BE\static
 ```
 
 > **Note:** Frontend static files are platform-independent. You can build them on any OS and copy them to another.
