@@ -2,7 +2,7 @@
 <!-- Newsletter import: upload EML file, choose or create newsletter feed, import as article -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiPost, apiGet, sanitize } from "$lib/api.js";
+    import { apiPost, apiGet } from "$lib/api.js";
     import { t } from "$lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");

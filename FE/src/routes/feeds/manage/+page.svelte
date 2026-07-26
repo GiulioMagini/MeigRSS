@@ -16,6 +16,9 @@
 
     let feeds = $state([]);
     let categories = $state([]);
+    // Guards the empty state: the message must not appear before the first
+    // load has actually resolved
+    let feedsLoaded = $state(false);
 
     // New feed form
     let newUrl = $state("");
@@ -44,6 +47,8 @@
             if (res.success) feeds = res.data;
         } catch (e) {
             console.error(e);
+        } finally {
+            feedsLoaded = true;
         }
     }
 
@@ -296,8 +301,12 @@
     }
 
     onMount(async () => {
+        // Covers both calls, so the page never renders its empty state
+        // before the feeds have arrived
+        setLoading(true);
         await loadCategories();
         await loadFeeds();
+        setLoading(false);
     });
 </script>
 
@@ -595,7 +604,9 @@
                 </div>
             </div>
         {:else}
-            <p class="empty">{t("empty_feeds")}</p>
+            {#if feedsLoaded}
+                <p class="empty">{t("empty_feeds")}</p>
+            {/if}
         {/each}
     </div>
 </div>

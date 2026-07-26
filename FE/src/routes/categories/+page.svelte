@@ -23,6 +23,7 @@
     async function addCategory() {
         if (!newName.trim()) return;
         error = "";
+        setLoading(true);
         try {
             const cleaned = sanitize({ input: newName.trim() });
             await apiPost("/api/categories", { name: cleaned });
@@ -31,6 +32,8 @@
         } catch (e) {
             const msg = e.message || "";
             error = t(msg) || msg;
+        } finally {
+            setLoading(false);
         }
     }
 
@@ -42,13 +45,17 @@
     async function saveEdit() {
         if (!editingName.trim() || !editingId) return;
         error = "";
+        setLoading(true);
         try {
             const cleaned = sanitize({ input: editingName.trim() });
             await apiPut(`/api/categories/${editingId}`, { name: cleaned });
             editingId = null;
             editingName = "";
             await loadCategories();
-        } catch (e) { error = e.message; }
+        } catch (e) { error = e.message; } 
+        finally {
+            setLoading(false);
+        }
     }
 
     function cancelEdit() {
@@ -58,6 +65,7 @@
 
     async function deleteCategory(id) {
         error = "";
+        setLoading(true);
         try {
             const res = await apiDelete(`/api/categories/${id}`);
             if (res.success) {
@@ -65,10 +73,16 @@
             }
         } catch (e) {
             error = e.message;
+        } finally {
+            setLoading(false);
         }
     }
 
-    onMount(loadCategories);
+    onMount(async () => {
+        setLoading(true);
+        await loadCategories();
+        setLoading(false);
+    });
 </script>
 
 <div class="categories-page">
