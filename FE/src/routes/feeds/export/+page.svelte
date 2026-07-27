@@ -1,8 +1,11 @@
 <!-- @ts-nocheck -->
 <!-- Feed export: download all feeds as OPML or JSON -->
 <script>
+    import { getContext } from "svelte";
     import { apiGet } from "$lib/api.js";
     import { t } from "$lib/i18n.svelte.js";
+
+    const setLoading = getContext("setLoading");
 
     let exported = $state(false);
     let error = $state("");
@@ -11,6 +14,7 @@
     async function exportFeeds() {
         exported = false;
         error = "";
+        setLoading(true);
         try {
             // Both formats are produced by the backend: OPML carries categories
             // and feeds, JSON also favorites and settings
@@ -37,6 +41,9 @@
             }
         } catch (e) {
             error = e.message;
+        } finally {
+            // Clear the overlay on every exit path, including blob/download failures
+            setLoading(false);
         }
     }
 </script>

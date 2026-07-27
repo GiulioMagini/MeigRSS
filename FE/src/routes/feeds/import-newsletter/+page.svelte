@@ -20,6 +20,7 @@
     let result = $state(null);
 
     async function loadNewsletterFeeds() {
+        setLoading(true);
         try {
             const res = await apiGet("/api/newsletter/feeds");
             if (res.success) {
@@ -33,6 +34,8 @@
             }
         } catch (e) {
             console.error(e);
+        } finally {
+            setLoading(false);
         }
     }
 
@@ -46,6 +49,8 @@
         parsedTitle = "";
         parsedAuthor = "";
         parsedDate = "";
+
+        setLoading(true);
 
         try {
             const text = await file.text();
@@ -61,6 +66,8 @@
             }
         } catch (err) {
             fileError = t("newsletter_invalid_file");
+        } finally {
+            setLoading(false);
         }
     }
 
