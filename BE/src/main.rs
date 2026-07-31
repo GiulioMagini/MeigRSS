@@ -246,7 +246,7 @@ async fn async_main() -> Result<(), Box<dyn std::error::Error>> {
     let llm = LlmClient::new();
 
     // Shared application state for all route handlers
-    let state = Arc::new(AppState { db, llm });
+    let state = Arc::new(AppState::new(db, llm));
 
     // Server configuration
     let port: u16 = std::env::var("MEIGRSS_PORT")

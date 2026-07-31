@@ -1,12 +1,14 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     response::Json,
     routing::{delete, get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use crate::db::{self, ArticleQuery, Database};
 use crate::config::{encryption, LlmProvider, WebRenderingProvider};
@@ -18,11 +20,63 @@ use crate::i18n;
 use crate::web_feed;
 use crate::opml;
 
+/// How long a tested feed stays available for the add endpoint to reuse.
+/// Long enough to cover the user reviewing the title and confirming, short
+/// enough that content already gone stale is never imported.
+const PENDING_FEED_TTL: Duration = Duration::from_secs(5 * 60);
+
+/// A feed downloaded by the test endpoint and not added yet.
+struct PendingFeed {
+    stored_at: Instant,
+    tested: feed::TestedFeed,
+}
+
 /// Shared application state passed to all route handlers.
 pub struct AppState {
     pub db: Database,
     pub llm: LlmClient,
+    /// Bodies fetched by `/api/feeds/test`, keyed by URL, so that adding the
+    /// feed right after does not hit the same server a second time.
+    ///
+    /// A `std` mutex is correct here: it is only held for the map operation
+    /// itself and never across an `await`.
+    pending_feeds: Mutex<HashMap<String, PendingFeed>>,
 }
+
+impl AppState {
+    /// Builds the state with an empty pending-feed cache.
+    pub fn new(db: Database, llm: LlmClient) -> Self {
+        Self {
+            db,
+            llm,
+            pending_feeds: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+/// Maximum size of a whole bulk newsletter upload. The batch is buffered in
+/// full before it reaches the transaction, so this doubles as the memory
+/// ceiling of the endpoint.
+const BULK_IMPORT_BODY_LIMIT: usize = 100 * 1024 * 1024;
+
+/// Maximum size of a single EML, whether uploaded on its own or inside a batch.
+/// A newsletter carrying inline base64 images stays well below this.
+const NEWSLETTER_MAX_FILE_SIZE: usize = 5 * 1024 * 1024;
+
+/// Maximum number of EML files accepted in one batch. Past this point the
+/// transaction runs long enough to leave the user without feedback.
+const BULK_IMPORT_MAX_FILES: usize = 500;
+
+/// Maximum size of a feed import JSON. The export is cumulative and grows with
+/// every archived newsletter, and since the export endpoint is a GET it has no
+/// limit of its own: too low a value here produces a backup that can be
+/// written but never restored. Deliberately generous for that reason.
+const FEEDS_IMPORT_BODY_LIMIT: usize = 256 * 1024 * 1024;
+
+/// Maximum size of a manually edited article full text. A long article stays
+/// well under this, and the cap keeps a paste of arbitrary size out of the
+/// database. Comfortably inside the default body limit of the route.
+const FULL_TEXT_MAX_SIZE: usize = 200 * 1024;
 
 /// Builds the complete API router with all endpoints.
 pub fn create_router(state: Arc<AppState>) -> Router {
@@ -33,6 +87,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/articles/{id}/summary", post(generate_summary))
         .route("/api/articles/{id}/scrape", post(scrape_article))
         .route("/api/articles/{id}/read", put(mark_article_read))
+        .route("/api/articles/{id}/full-text", put(update_full_text))
         // Feed endpoints
         .route("/api/feeds", get(get_feeds))
         .route("/api/feeds", post(add_feed))
@@ -46,10 +101,23 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/feeds/refresh", post(refresh_feeds))
         .route("/api/feeds/export", get(export_feeds))
         .route("/api/feeds/export/opml", get(export_feeds_opml))
-        .route("/api/feeds/import", post(import_feeds))
+        .route(
+            "/api/feeds/import",
+            post(import_feeds).layer(DefaultBodyLimit::max(FEEDS_IMPORT_BODY_LIMIT)),
+        )
         .route("/api/feeds/import/opml", post(parse_feeds_opml))
-        .route("/api/newsletter/import", post(import_newsletter))
-        .route("/api/newsletter/preview", post(preview_newsletter))
+        .route(
+            "/api/newsletter/import",
+            post(import_newsletter).layer(DefaultBodyLimit::max(NEWSLETTER_MAX_FILE_SIZE)),
+        )
+        .route(
+            "/api/newsletter/import-bulk",
+            post(import_newsletter_bulk).layer(DefaultBodyLimit::max(BULK_IMPORT_BODY_LIMIT)),
+        )
+        .route(
+            "/api/newsletter/preview",
+            post(preview_newsletter).layer(DefaultBodyLimit::max(NEWSLETTER_MAX_FILE_SIZE)),
+        )
         .route("/api/newsletter/feeds", get(get_newsletter_feeds))
         .route("/api/newsletter/feeds", post(create_newsletter_feed))
         .route("/api/newsletter/{id}/html", get(get_newsletter_html))
@@ -145,6 +213,12 @@ struct SummaryQuery {
     lang: Option<String>,
 }
 
+#[derive(Serialize)]
+struct SummaryResponse {
+    summary: String,
+    source: String,
+}
+
 /// POST /api/articles/{id}/summary - Generate AI summary for a specific article.
 /// This is the "manual trigger" button — has priority over batch summaries.
 async fn generate_summary(
@@ -212,10 +286,33 @@ async fn mark_article_read(
     }
 }
 
-#[derive(Serialize)]
-struct SummaryResponse {
-    summary: String,
-    source: String,
+#[derive(Deserialize)]
+struct FullTextUpdateRequest {
+    full_text: String,
+}
+
+/// PUT /api/articles/{id}/full-text - Replace the full text of an article.
+///
+/// Meant for text the user writes or pastes by hand, which is the only way to
+/// give a full text to an article the scraper cannot reach.
+///
+/// An empty text is accepted and clears the field: automatic scraping then
+/// takes over again the next time the card is expanded. A non-empty text, on
+/// the contrary, permanently stops the automatic scraping for that article, so
+/// what the user wrote is never silently overwritten.
+async fn update_full_text(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<FullTextUpdateRequest>,
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
+    if body.full_text.len() > FULL_TEXT_MAX_SIZE {
+        return Err(ApiResponse::err("full_text_too_long"));
+    }
+
+    match state.db.update_article_full_text(&id, &body.full_text) {
+        Ok(_) => Ok(ApiResponse::ok(())),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
 }
 
 // ─── Feed handlers ─────────────────────────────────────────────────────────
@@ -243,10 +340,40 @@ async fn add_feed(
     State(state): State<Arc<AppState>>,
     Json(body): Json<AddFeedRequest>,
 ) -> Result<Json<ApiResponse<i64>>, (StatusCode, Json<ApiResponse<i64>>)> {
-    match state.db.add_feed(&body.url, &body.title, &body.site_name, body.category_id) {
-        Ok(id) => Ok(ApiResponse::ok(id)),
-        Err(e) => Err(ApiResponse::err(format!("Failed to add feed: {}", e))),
+    let id = match state.db.add_feed(&body.url, &body.title, &body.site_name, body.category_id) {
+        Ok(id) => id,
+        Err(e) => return Err(ApiResponse::err(format!("Failed to add feed: {}", e))),
+    };
+
+    // Take the entry out whether it is fresh or stale: either way it has served
+    // its purpose and must not linger.
+    let pending = state
+        .pending_feeds
+        .lock()
+        .ok()
+        .and_then(|mut map| map.remove(&body.url))
+        .filter(|p| p.stored_at.elapsed() < PENDING_FEED_TTL);
+
+    // Nothing cached means the feed was added without a test (bulk import, or
+    // the user waited too long): the next scheduled poll fills it in, as before.
+    if let Some(pending) = pending {
+        match feed::import_tested_feed(&state.db, id, &body.url, &pending.tested) {
+            Ok(count) => {
+                if crate::is_system_italian() {
+                    tracing::info!("Feed '{}': {} articoli importati dal test", body.site_name, count);
+                } else {
+                    tracing::info!("Feed '{}': {} articles imported from the test", body.site_name, count);
+                }
+            }
+            Err(e) => {
+                // The feed row exists and is valid: a failed import only means
+                // the articles arrive with the next poll.
+                tracing::warn!("Failed to import tested feed '{}': {}", body.url, e);
+            }
+        }
     }
+
+    Ok(ApiResponse::ok(id))
 }
 
 /// DELETE /api/feeds/{id} - Remove a feed and its articles
@@ -392,10 +519,28 @@ struct TestFeedResponse {
 
 /// POST /api/feeds/test - Validate a feed URL before adding it
 async fn test_feed(
+    State(state): State<Arc<AppState>>,
     Json(body): Json<TestFeedRequest>,
 ) -> Result<Json<ApiResponse<TestFeedResponse>>, (StatusCode, Json<ApiResponse<TestFeedResponse>>)> {
     match feed::test_feed_url(&body.url).await {
-        Ok((title, site_name)) => Ok(ApiResponse::ok(TestFeedResponse { title, site_name })),
+        Ok(tested) => {
+            let response = TestFeedResponse {
+                title: tested.title.clone(),
+                site_name: tested.site_name.clone(),
+            };
+
+            if let Ok(mut pending) = state.pending_feeds.lock() {
+                // Drop whatever expired while nobody was looking, so the map
+                // stays bounded by what the user tested in the last few minutes.
+                pending.retain(|_, p| p.stored_at.elapsed() < PENDING_FEED_TTL);
+                pending.insert(
+                    body.url.clone(),
+                    PendingFeed { stored_at: Instant::now(), tested },
+                );
+            }
+
+            Ok(ApiResponse::ok(response))
+        }
         Err(e) => Err(ApiResponse::err(e)),
     }
 }
@@ -782,20 +927,138 @@ async fn update_language(
 
 // ─── Newsletter handlers ──────────────────────────────────────────────
 
-#[derive(Deserialize)]
-struct NewsletterImportRequest {
-    eml_content: String,
-    title: String,
-    feed_id: i64,
-}
-
-/// POST /api/newsletter/import - Import a newsletter from EML file content
+/// POST /api/newsletter/import - Import a single newsletter from an EML file.
+///
+/// The body carries the `file` itself plus a `title` and a `feed_id` text
+/// field. The file travels as multipart, not inside JSON, so that the bytes
+/// reach the parser exactly as they are on disk.
 async fn import_newsletter(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<NewsletterImportRequest>,
+    mut multipart: Multipart,
 ) -> Result<Json<ApiResponse<String>>, (StatusCode, Json<ApiResponse<String>>)> {
-    match newsletter::import_eml(&body.eml_content, &body.title, body.feed_id, &state.db) {
+    let mut eml: Option<axum::body::Bytes> = None;
+    let mut title = String::new();
+    let mut feed_id: Option<i64> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| ApiResponse::<String>::err("newsletter_invalid_file"))?
+    {
+        // The name has to be read before the field is consumed by its body
+        let name = field.name().unwrap_or_default().to_string();
+
+        match name.as_str() {
+            "file" => {
+                eml = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|_| ApiResponse::<String>::err("newsletter_invalid_file"))?,
+                );
+            }
+            "title" => {
+                title = field
+                    .text()
+                    .await
+                    .map_err(|_| ApiResponse::<String>::err("newsletter_invalid_file"))?;
+            }
+            "feed_id" => {
+                let raw = field
+                    .text()
+                    .await
+                    .map_err(|_| ApiResponse::<String>::err("newsletter_invalid_file"))?;
+                feed_id = raw.trim().parse::<i64>().ok();
+            }
+            _ => {
+                let _ = field.bytes().await;
+            }
+        }
+    }
+
+    let (Some(eml), Some(feed_id)) = (eml, feed_id) else {
+        return Err(ApiResponse::err("newsletter_invalid_file"));
+    };
+
+    match newsletter::import_eml(&eml, &title, feed_id, &state.db) {
         Ok(article_id) => Ok(ApiResponse::ok(article_id)),
+        Err(e) => Err(ApiResponse::err(e)),
+    }
+}
+
+/// POST /api/newsletter/import-bulk - Import every EML of a folder at once.
+///
+/// The body carries a `feed_id` text field followed by one `files` field per
+/// EML. Files travel as raw bytes on purpose: decoding them as text in the
+/// browser would corrupt every message whose MIME headers declare an encoding
+/// other than UTF-8.
+async fn import_newsletter_bulk(
+    State(state): State<Arc<AppState>>,
+    mut multipart: Multipart,
+) -> Result <
+    Json<ApiResponse<newsletter::BulkImportOutcome>>,
+    (StatusCode, Json<ApiResponse<newsletter::BulkImportOutcome>>),
+> {
+    let mut feed_id: Option<i64> = None;
+    let mut files: Vec<(String, axum::body::Bytes)> = Vec::new();
+
+    while let Some(field) = multipart.next_field().await.map_err(|_| {
+        ApiResponse::<newsletter::BulkImportOutcome>::err("newsletter_invalid_file")
+    })? {
+        // Both names have to be read before the field is consumed by its body
+        let name = field.name().unwrap_or_default().to_string();
+        let file_name = field.file_name().unwrap_or_default().to_string();
+
+        match name.as_str() {
+            "feed_id" => {
+                let raw = field.text().await.map_err(|_| {
+                    ApiResponse::<newsletter::BulkImportOutcome>::err("newsletter_invalid_file")
+                })?;
+                feed_id = raw.trim().parse::<i64>().ok();
+            }
+            "files" => {
+                // Checked before reading the body, so an oversized folder is
+                // refused without buffering the file that goes over the edge
+                if files.len() >= BULK_IMPORT_MAX_FILES {
+                    return Err(ApiResponse::err("newsletter_folder_too_many"));
+                }
+
+                let bytes = field.bytes().await.map_err(|_| {
+                    ApiResponse::<newsletter::BulkImportOutcome>::err("newsletter_invalid_file")
+                })?;
+
+                if bytes.len() > NEWSLETTER_MAX_FILE_SIZE {
+                    return Err(ApiResponse::err("newsletter_folder_too_large"));
+                }
+
+                files.push((file_name, bytes));
+            }
+            // Drain anything unexpected instead of leaving it in the stream
+            _ => {
+                let _ = field.bytes().await;
+            }
+        }
+    }
+
+    let Some(feed_id) = feed_id else {
+        return Err(ApiResponse::err("newsletter_invalid_file"));
+    };
+
+    if files.is_empty() {
+        return Err(ApiResponse::err("newsletter_folder_no_eml"));
+    }
+
+    // Parsing and Readability are CPU-bound: run on the whole batch inside the
+    // async executor they would stall every other request until the folder is
+    // done, so the work goes to the blocking pool.
+    let outcome = tokio::task::spawn_blocking(move || {
+        newsletter::import_eml_batch(&files, feed_id, &state.db)
+    })
+    .await
+    .map_err(|e| ApiResponse::internal_err(format!("Bulk import task failed: {}", e)))?;
+
+    match outcome {
+        Ok(outcome) => Ok(ApiResponse::ok(outcome)),
         Err(e) => Err(ApiResponse::err(e)),
     }
 }
@@ -824,11 +1087,6 @@ async fn get_newsletter_html(
     }
 }
 
-#[derive(Deserialize)]
-struct NewsletterPreviewRequest {
-    eml_content: String,
-}
-
 #[derive(Serialize)]
 struct NewsletterPreviewResponse {
     title: String,
@@ -836,12 +1094,41 @@ struct NewsletterPreviewResponse {
     date: String,
 }
 
-/// POST /api/newsletter/preview - Parse EML and return metadata for preview
+/// POST /api/newsletter/preview - Parse an EML and return its metadata.
+///
+/// Takes the file as multipart for the same reason as the import: the sender
+/// name shown in the preview comes from the message headers, and decoding the
+/// file as text beforehand would garble it before it is ever displayed.
 async fn preview_newsletter(
-    Json(body): Json<NewsletterPreviewRequest>,
-) -> Result<Json<ApiResponse<NewsletterPreviewResponse>>, (StatusCode, Json<ApiResponse<NewsletterPreviewResponse>>)> {
+    mut multipart: Multipart,
+) -> Result <
+    Json<ApiResponse<NewsletterPreviewResponse>>,
+    (StatusCode, Json<ApiResponse<NewsletterPreviewResponse>>),
+> {
+    let mut eml: Option<axum::body::Bytes> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| ApiResponse::<NewsletterPreviewResponse>::err("newsletter_invalid_file"))?
+    {
+        let name = field.name().unwrap_or_default().to_string();
+        let bytes = field
+            .bytes()
+            .await
+            .map_err(|_| ApiResponse::<NewsletterPreviewResponse>::err("newsletter_invalid_file"))?;
+
+        if name == "file" {
+            eml = Some(bytes);
+        }
+    }
+
+    let Some(eml) = eml else {
+        return Err(ApiResponse::err("newsletter_invalid_file"));
+    };
+
     let message = mail_parser::MessageParser::default()
-        .parse(body.eml_content.as_bytes())
+        .parse(eml.as_ref())
         .ok_or_else(|| ApiResponse::<NewsletterPreviewResponse>::err("newsletter_invalid_file"))?;
 
     let title = message.subject().unwrap_or("").to_string();

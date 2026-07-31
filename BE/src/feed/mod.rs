@@ -1,10 +1,33 @@
 use feed_rs::parser;
-use reqwest::Client;
+use reqwest::{Client, StatusCode, Url, redirect};
 use chrono::Utc;
 use uuid::Uuid;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use crate::db::{Database, Article, Feed};
 use crate::web_feed;
+
+/// User-Agent sent when polling feeds. The version comes from Cargo at compile
+/// time so it can never drift from the released one, and the contact URL lets
+/// feed operators reach the project.
+///
+/// Feed polling must never pretend to be a browser: the Chrome User-Agent in
+/// `scraper/mod.rs` covers on-demand article scraping, which is a different
+/// case and stays as it is.
+const FEED_USER_AGENT: &str = concat!(
+    "MeigRSS/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/GiulioMagini/MeigRSS)"
+);
+
+/// Minimum length of feed-provided content before it is accepted as the full
+/// article text. Publishers often repeat the same teaser in both the summary
+/// and the content element: taking a teaser here would permanently block
+/// scraping and leave the reader with a truncated article, so anything short
+/// is ignored and the scraper keeps its job.
+const FEED_CONTENT_MIN_LEN: usize = 500;
 
 /// Result of fetching and parsing a single RSS feed.
 #[derive(Debug, serde::Serialize)]
@@ -14,7 +37,123 @@ pub struct FetchResult {
     pub articles_found: usize,
     pub articles_new: usize,
     pub error: Option<String>,
-    pub auto_paused: bool,
+    /// i18n key explaining why the feed was paused, `None` when it was not.
+    /// The frontend renders it next to the feed name in the auto-pause modal.
+    pub pause_reason: Option<&'static str>,
+    /// Seconds requested by a `429` through `Retry-After`, when it sent one.
+    /// Left raw so the frontend can format it in the current language.
+    pub retry_after_seconds: Option<u64>,
+}
+
+/// Why a feed was paused during this refresh.
+enum PauseReason {
+    /// `410`: the feed does not exist any more.
+    Gone,
+    /// `429`: polled too often, with the `Retry-After` delay in seconds when
+    /// the server provided one.
+    TooManyRequests(Option<u64>),
+}
+
+/// What the server answered to a conditional GET.
+enum FeedOutcome {
+    /// `200`: fresh content. Each validator is `Some` only when the server
+    /// actually sent that header; `None` means the stored value must be left
+    /// alone rather than erased.
+    Updated {
+        articles: Vec<Article>,
+        etag: Option<String>,
+        last_modified: Option<String>,
+    },
+    /// `304`: nothing changed, and the stored validators stay as they are.
+    NotModified,
+    /// `410` / `429` / Timeout: the feed gets paused.
+    Paused(PauseReason),
+}
+
+/// Outcome of one feed fetch.
+///
+/// `canonical_url` sits beside the outcome instead of being one of its variants
+/// because a redirect and the response body arrive together: reqwest follows
+/// the chain internally and hands back only the final response, which may be a
+/// `200` or a `304`. "Moved" is therefore not an alternative to "not modified".
+struct FeedResponse {
+    outcome: FeedOutcome,
+    canonical_url: Option<String>,
+}
+
+/// State of one redirect chain while it is being followed.
+struct RedirectTrack {
+    /// Last URL reached through an unbroken sequence of `301` / `308`.
+    candidate: Option<String>,
+    /// Cleared by the first temporary redirect: with `A →301→ B →302→ C` the
+    /// canonical URL is `B`, because the hop to `C` is not permanent.
+    permanent_only: bool,
+}
+
+/// What a feed URL test produced, kept around so that adding the feed right
+/// afterwards does not have to download and parse the same body a second time.
+///
+/// The body is already decoded by `fix_feed_encoding`, so it can be handed
+/// straight to `parse_articles`.
+pub struct TestedFeed {
+    pub title: String,
+    pub site_name: String,
+    pub body: Vec<u8>,
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+}
+
+/// Redirect chains in flight, keyed by the first URL of each chain.
+///
+/// A `std` mutex is the right one here: it is only held for the few statements
+/// that touch the map, never across an `await`, and the closure required by
+/// `Policy::custom` is synchronous and must be `Send + Sync + 'static`.
+type RedirectTracker = Arc<Mutex<HashMap<String, RedirectTrack>>>;
+
+/// Builds the client used for feed polling, whose redirect policy records where
+/// a feed was permanently moved to.
+///
+/// A dedicated client is needed because this policy must not affect the clients
+/// used for article scraping and web feeds, where following redirects silently
+/// is the correct behaviour.
+fn build_feed_client(tracker: RedirectTracker) -> Result<Client, String> {
+    let policy = redirect::Policy::custom(move |attempt| {
+        // Each chain is keyed by its first URL, which is the feed URL itself:
+        // `feeds.url` is UNIQUE, so the key stays unambiguous even with several
+        // feeds redirecting in parallel on the same client.
+        if let Some(first) = attempt.previous().first() {
+            let key = first.to_string();
+            let status = attempt.status();
+            let next = attempt.url().to_string();
+
+            // A poisoned mutex only costs the URL rewrite, never the fetch,
+            // so the error is swallowed instead of failing the request.
+            if let Ok(mut map) = tracker.lock() {
+                let track = map.entry(key).or_insert(RedirectTrack {
+                    candidate: None,
+                    permanent_only: true,
+                });
+                if track.permanent_only
+                    && (status == StatusCode::MOVED_PERMANENTLY
+                        || status == StatusCode::PERMANENT_REDIRECT)
+                {
+                    track.candidate = Some(next);
+                } else {
+                    track.permanent_only = false;
+                }
+            }
+        }
+
+        // Delegating the decision to the default policy keeps its 10-hop limit:
+        // a custom policy is not loop-bounded on its own, as the documentation
+        // of `Policy::custom` states explicitly.
+        redirect::Policy::default().redirect(attempt)
+    });
+
+    Client::builder()
+        .redirect(policy)
+        .build()
+        .map_err(|e| format!("Failed to build the feed HTTP client: {}", e))
 }
 
 /// Strips all HTML tags from a string and decodes HTML entities (e.g. &amp; → &, &#32; → space).
@@ -157,22 +296,158 @@ fn fix_feed_encoding(bytes: &[u8]) -> Vec<u8> {
     fixed.into_bytes()
 }
 
-/// Fetches a single RSS feed and returns only the new articles.
-/// `start_from` is the earliest date to accept articles from —
-/// anything older is skipped to avoid unnecessary downloads.
+/// Reads a response header as an owned string, keeping `None` when the header
+/// is absent. That distinction decides whether a stored validator survives, so
+/// the `Option` must never be flattened into an empty string along the way.
+fn header_string(
+    response: &reqwest::Response,
+    name: reqwest::header::HeaderName,
+) -> Option<String> {
+    response.headers().get(name)?.to_str().ok().map(str::to_string)
+}
+
+/// Parses `Retry-After`, allowed in two forms: a delta in seconds (`3600`) or
+/// an HTTP-date (`Wed, 29 Jul 2026 14:00:00 GMT`), from which the delta is
+/// computed. Dates already in the past collapse to zero.
+///
+/// Only the IMF-fixdate form is handled, which is what current servers send;
+/// the two obsolete HTTP date formats are not, and fall back to no delay.
+fn parse_retry_after(value: &str) -> Option<u64> {
+    let value = value.trim();
+
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(seconds);
+    }
+
+    let target = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let delta = target.with_timezone(&Utc) - Utc::now();
+    Some(delta.num_seconds().max(0) as u64)
+}
+
+/// Formats a retry delay for terminal output: minutes up to two hours, hours
+/// above that, since `Retry-After` values of several hours are not unusual.
+/// Rounded up with a floor of one, so a short delay never reads as zero.
+fn format_retry_delay(seconds: u64, italian: bool) -> String {
+    let minutes = seconds.div_ceil(60).max(1);
+    if minutes <= 120 {
+        if italian {
+            format!("{} minuti", minutes)
+        } else {
+            format!("{} minutes", minutes)
+        }
+    } else {
+        let hours = minutes.div_ceil(60);
+        if italian {
+            format!("{} ore", hours)
+        } else {
+            format!("{} hours", hours)
+        }
+    }
+}
+
+/// Oldest date worth keeping, derived from the `retention_hours` setting.
+/// Shared by the periodic refresh and by the import of a feed that was just
+/// tested, so the two cannot drift apart on the default value.
+fn retention_cutoff(db: &Database) -> chrono::DateTime<Utc> {
+    let hours = db
+        .get_setting("retention_hours")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(24);
+
+    Utc::now() - chrono::Duration::hours(hours)
+}
+
+/// Fetches a single RSS feed with a conditional GET and reports what the server
+/// answered. `start_from` is the earliest date to accept articles from —
+/// anything older is skipped to avoid unnecessary work.
 async fn fetch_single_feed(
     client: &Client,
     feed: &Feed,
     start_from: chrono::DateTime<Utc>,
-) -> Result<Vec<Article>, String> {
-    // Fetch the raw RSS/Atom XML
-    let response = client
+    tracker: &RedirectTracker,
+) -> Result<FeedResponse, String> {
+    // The redirect policy keys chains by the URL as reqwest normalized it, so
+    // the same normalization is applied here to find the entry again.
+    let tracker_key = Url::parse(&feed.url)
+        .map(|u| u.to_string())
+        .unwrap_or_else(|_| feed.url.clone());
+
+    let mut request = client
         .get(&feed.url)
-        .header("User-Agent", "MeigRSS/0.1 (RSS Aggregator)")
-        .timeout(std::time::Duration::from_secs(30))
-        .send()
-        .await
+        .header("User-Agent", FEED_USER_AGENT)
+        // Same accept header of miniflux
+        .header(
+            "Accept",
+            "application/xml,application/atom+xml,application/rss+xml,application/rdf+xml,application/feed+json,text/html,*/*;q=0.9",
+        )
+        .timeout(Duration::from_secs(30));
+
+    // Conditional headers. Both values go back exactly as they arrived: they
+    // are opaque strings, so quotes and the weak `W/` prefix stay in place.
+    if !feed.etag.is_empty() {
+        request = request.header("If-None-Match", &feed.etag);
+    }
+    if !feed.last_modified.is_empty() {
+        request = request.header("If-Modified-Since", &feed.last_modified);
+    }
+    // Accept-Encoding is deliberately not set: reqwest adds it and decompresses
+    // the body only as long as the request does not already carry one.
+
+    let response = request.send().await;
+
+    // The tracking entry is consumed here, on success and on failure alike, so
+    // the shared map cannot grow across refreshes.
+    let canonical_url = tracker
+        .lock()
+        .ok()
+        .and_then(|mut map| map.remove(&tracker_key))
+        .and_then(|track| track.candidate);
+
+    let response = response
         .map_err(|e| format!("HTTP request failed for {}: {}", feed.url, e))?;
+
+    let status = response.status();
+
+    // 304: nothing changed, and the validators we sent are still valid.
+    if status == StatusCode::NOT_MODIFIED {
+        return Ok(FeedResponse {
+            outcome: FeedOutcome::NotModified,
+            canonical_url,
+        });
+    }
+
+    // 410: the feed is gone for good.
+    if status == StatusCode::GONE {
+        return Ok(FeedResponse {
+            outcome: FeedOutcome::Paused(PauseReason::Gone),
+            canonical_url,
+        });
+    }
+
+    // 429: we are polling too often.
+    if status == StatusCode::TOO_MANY_REQUESTS {
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_retry_after);
+        return Ok(FeedResponse {
+            outcome: FeedOutcome::Paused(PauseReason::TooManyRequests(retry_after)),
+            canonical_url,
+        });
+    }
+
+    // Any other failing status used to reach feed-rs as a body it cannot parse,
+    // surfacing as a misleading parse error. It is now reported for what it is.
+    if !status.is_success() {
+        return Err(format!("Feed {} answered with HTTP {}", feed.url, status));
+    }
+
+    // Read while the response is still whole: `bytes()` consumes it.
+    let etag = header_string(&response, reqwest::header::ETAG);
+    let last_modified = header_string(&response, reqwest::header::LAST_MODIFIED);
 
     let body = response
         .bytes()
@@ -184,9 +459,39 @@ async fn fetch_single_feed(
     // Detect and fix this by checking the XML declaration and re-encoding if needed.
     let body = fix_feed_encoding(&body);
 
-    // Parse the feed using feed-rs
-    let parsed = parser::parse(&body[..])
-        .map_err(|e| format!("Failed to parse feed {}: {}", feed.url, e))?;
+    let articles = parse_articles(
+        &body,
+        feed.id,
+        &feed.url,
+        feed.force_ai_summary,
+        start_from,
+    )?;
+
+    Ok(FeedResponse {
+        outcome: FeedOutcome::Updated {
+            articles,
+            etag,
+            last_modified,
+        },
+        canonical_url,
+    })
+}
+
+/// Turns a feed body into the articles worth keeping, skipping entries with no
+/// link and anything published before `start_from`.
+///
+/// Takes the three fields it actually needs rather than the whole `Feed`, so it
+/// can also be called right after a feed row is created, when no `Feed` has
+/// been read back from the database yet.
+fn parse_articles(
+    body: &[u8],
+    feed_id: i64,
+    feed_url: &str,
+    force_ai_summary: bool,
+    start_from: chrono::DateTime<Utc>,
+) -> Result<Vec<Article>, String> {
+    let parsed = parser::parse(body)
+        .map_err(|e| format!("Failed to parse feed {}: {}", feed_url, e))?;
 
     let now = Utc::now().to_rfc3339();
     let mut articles = Vec::new();
@@ -236,17 +541,29 @@ async fn fetch_single_feed(
         let (summary, summary_source) = evaluate_feed_summary(
             &summary_text,
             &title,
-            feed.force_ai_summary,
+            force_ai_summary,
         );
+
+        // Feeds that publish the whole article (RSS content:encoded, Atom
+        // content) already hand us what the scraper would otherwise go and
+        // fetch from the origin site. Using it saves that request and makes the
+        // full text — and therefore the AI summary — available immediately,
+        // even on feeds where scraping is disabled.
+        let full_text = entry
+            .content
+            .and_then(|c| c.body)
+            .map(|body| strip_html_and_decode(&body))
+            .filter(|text| text.len() >= FEED_CONTENT_MIN_LEN && text.len() > summary_text.len())
+            .unwrap_or_default();
 
         articles.push(Article {
             id: Uuid::new_v4().to_string(),
-            feed_id: feed.id,
+            feed_id,
             url: article_url,
             title,
             author,
             published_at,
-            full_text: String::new(),
+            full_text,
             summary,
             summary_source,
             is_favorite: false,
@@ -257,7 +574,6 @@ async fn fetch_single_feed(
 
     Ok(articles)
 }
-
 /// Evaluates the feed-provided summary and always saves it if valid,
 /// regardless of the force_ai flag. The force_ai flag only affects
 /// the summary_source marker, not whether the text is stored.
@@ -350,7 +666,8 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
             articles_found: 0,
             articles_new: 0,
             error: Some("no_internet".to_string()),
-            auto_paused: false,
+            pause_reason: None,
+            retry_after_seconds: None,
         }];
     }
 
@@ -375,7 +692,19 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
         .and_then(|v| v.parse::<i64>().ok())
         .unwrap_or(24);
 
-    let retention_cutoff = Utc::now() - chrono::Duration::hours(retention);
+    let retention_cutoff = retention_cutoff(db);
+
+    // Feed polling gets its own client so its redirect policy cannot affect
+    // the connectivity check above, which would otherwise leave entries for
+    // unrelated hosts in the tracker.
+    let redirect_tracker: RedirectTracker = Arc::new(Mutex::new(HashMap::new()));
+    let feed_client = match build_feed_client(Arc::clone(&redirect_tracker)) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("{}", e);
+            return vec![];
+        }
+    };
 
     // Maximum number of feeds fetched in parallel. Bounded to avoid
     // saturating slow networks while still cutting total refresh time.
@@ -433,13 +762,14 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
 
         // Spawn a concurrent fetch task for this feed.
         // reqwest::Client is cheap to clone (shared connection pool inside).
-        let client = client.clone();
+        let client = feed_client.clone();
         let feed = feed.clone();
         let semaphore = std::sync::Arc::clone(&semaphore);
+        let tracker = Arc::clone(&redirect_tracker);
         join_set.spawn(async move {
             // Limit the number of simultaneous HTTP fetches
             let _permit = semaphore.acquire_owned().await;
-            let fetch_result = fetch_single_feed(&client, &feed, start_from).await;
+            let fetch_result = fetch_single_feed(&client, &feed, start_from, &tracker).await;
             (feed, fetch_result)
         });
     }
@@ -457,8 +787,51 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
             }
         };
 
+        let italian = crate::is_system_italian();
+
+        // A permanently moved feed is followed silently: the URL is rewritten
+        // and the user only learns about it from the terminal. This runs before
+        // the validators are saved, because relocating clears them.
+        if let Ok(ref fetched) = fetch_result
+            && let Some(ref new_url) = fetched.canonical_url
+        {
+            match db.relocate_feed_url(feed.id, new_url) {
+                Ok(_) => {
+                    if italian {
+                        tracing::info!(
+                            "Feed '{}' spostato a questo link: {}",
+                            feed.site_name, new_url
+                        );
+                    } else {
+                        tracing::info!(
+                            "Moved feed '{}' to this link: {}",
+                            feed.site_name, new_url
+                        );
+                    }
+                }
+                Err(e) => {
+                    // `feeds.url` is UNIQUE: the target is already subscribed as
+                    // a separate feed, so the original URL is left untouched.
+                    if italian {
+                        tracing::warn!(
+                            "Impossibile spostare il feed '{}' a {}: {}",
+                            feed.site_name, new_url, e
+                        );
+                    } else {
+                        tracing::warn!(
+                            "Cannot move feed '{}' to {}: {}",
+                            feed.site_name, new_url, e
+                        );
+                    }
+                }
+            }
+        }
+
         let result = match fetch_result {
-            Ok(articles) => {
+            Ok(FeedResponse {
+                outcome: FeedOutcome::Updated { articles, etag, last_modified },
+                ..
+            }) => {
                 let found = articles.len();
                 let mut new_count = 0;
 
@@ -472,7 +845,17 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                     }
                 }
 
-                if crate::is_system_italian() {
+                // Stored after the articles: a validator saved first would mark
+                // the feed as up to date even if every insert had failed.
+                if let Err(e) = db.set_feed_validators(
+                    feed.id,
+                    etag.as_deref(),
+                    last_modified.as_deref(),
+                ) {
+                    tracing::warn!("Failed to save validators for feed {}: {}", feed.id, e);
+                }
+
+                if italian {
                     tracing::info!(
                         "Feed '{}': {} articoli trovati, {} nuovi articoli salvati",
                         feed.site_name, found, new_count
@@ -490,7 +873,84 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                     articles_found: found,
                     articles_new: new_count,
                     error: None,
-                    auto_paused: false,
+                    pause_reason: None,
+                    retry_after_seconds: None,
+                }
+            }
+            Ok(FeedResponse { outcome: FeedOutcome::NotModified, .. }) => {
+                if italian {
+                    tracing::info!("Feed '{}': nessun nuovo articolo nel feed", feed.site_name);
+                } else {
+                    tracing::info!("Feed '{}': no new articles in the feed", feed.site_name);
+                }
+
+                FetchResult {
+                    feed_id: feed.id,
+                    feed_name: feed.site_name.clone(),
+                    articles_found: 0,
+                    articles_new: 0,
+                    error: None,
+                    pause_reason: None,
+                    retry_after_seconds: None,
+                }
+            }
+            Ok(FeedResponse { outcome: FeedOutcome::Paused(reason), .. }) => {
+                if let Err(e) = db.set_feed_paused(feed.id, true) {
+                    tracing::error!("Failed to auto-pause feed {}: {}", feed.id, e);
+                }
+
+                let (pause_reason, retry_after_seconds) = match reason {
+                    PauseReason::Gone => {
+                        if italian {
+                            tracing::warn!(
+                                "Feed '{}': non esiste più, messo in pausa. Per sbloccarlo, vai nella pagina dei feed.",
+                                feed.site_name
+                            );
+                        } else {
+                            tracing::warn!(
+                                "Feed '{}': no longer exists, feed is paused. To unlock it, go to the feed page.",
+                                feed.site_name
+                            );
+                        }
+                        ("pause_reason_gone", None)
+                    }
+                    PauseReason::TooManyRequests(retry_after) => {
+                        match retry_after.map(|s| format_retry_delay(s, italian)) {
+                            Some(wait) if italian => tracing::warn!(
+                                "Feed '{}': troppe richieste, messo in pausa. Per sbloccarlo, vai nella pagina dei feed. Prova a farlo tra {}.",
+                                feed.site_name, wait
+                            ),
+                            Some(wait) => tracing::warn!(
+                                "Feed '{}': too many requests, feed is paused. To unlock it, go to the feed page. Try to do this after {}.",
+                                feed.site_name, wait
+                            ),
+                            None if italian => tracing::warn!(
+                                "Feed '{}': troppe richieste, messo in pausa. Per sbloccarlo, vai nella pagina dei feed.",
+                                feed.site_name
+                            ),
+                            None => tracing::warn!(
+                                "Feed '{}': too many requests, feed is paused. To unlock it, go to the feed page.",
+                                feed.site_name
+                            ),
+                        }
+
+                        let key = if retry_after.is_some() {
+                            "pause_reason_too_many_retry"
+                        } else {
+                            "pause_reason_too_many"
+                        };
+                        (key, retry_after)
+                    }
+                };
+
+                FetchResult {
+                    feed_id: feed.id,
+                    feed_name: feed.site_name.clone(),
+                    articles_found: 0,
+                    articles_new: 0,
+                    error: None,
+                    pause_reason: Some(pause_reason),
+                    retry_after_seconds,
                 }
             }
             Err(e) => {
@@ -502,12 +962,10 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                 if is_timeout {
                     if let Err(pause_err) = db.set_feed_paused(feed.id, true) {
                         tracing::error!("Failed to auto-pause feed {}: {}", feed.id, pause_err);
+                    } else if italian {
+                        tracing::info!("Feed '{}' messo in pausa automaticamente per errore di connessione", feed.site_name);
                     } else {
-                        if crate::is_system_italian() {
-                            tracing::info!("Feed '{}' messo in pausa automaticamente per errore di connessione", feed.site_name);
-                        } else {
-                            tracing::info!("Feed '{}' auto-paused due to connection error", feed.site_name);
-                        }
+                        tracing::info!("Feed '{}' auto-paused due to connection error", feed.site_name);
                     }
                 }
 
@@ -517,7 +975,8 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                     articles_found: 0,
                     articles_new: 0,
                     error: Some(e),
-                    auto_paused: is_timeout,
+                    pause_reason: is_timeout.then_some("pause_reason_timeout"),
+                    retry_after_seconds: None,
                 }
             }
         };
@@ -533,7 +992,8 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
             articles_found: wr.articles_found,
             articles_new: wr.articles_new,
             error: wr.error,
-            auto_paused: wr.auto_paused,
+            pause_reason: wr.auto_paused.then_some("pause_reason_timeout"),
+            retry_after_seconds: None,
         });
     }
 
@@ -547,16 +1007,26 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
 
 /// Tests a single feed URL to verify it's valid and parseable.
 /// Used when adding a new feed from the UI.
-pub async fn test_feed_url(url: &str) -> Result<(String, String), String> {
+pub async fn test_feed_url(url: &str) -> Result<TestedFeed, String> {
     let client = Client::new();
 
     let response = client
         .get(url)
-        .header("User-Agent", "MeigRSS/0.1 (RSS Aggregator)")
+        .header("User-Agent", FEED_USER_AGENT)
+        .header(
+            "Accept",
+            "application/xml,application/atom+xml,application/rss+xml,application/rdf+xml,application/feed+json,text/html,*/*;q=0.9",
+        )
         .timeout(std::time::Duration::from_secs(15))
         .send()
         .await
         .map_err(|e| format!("Connection failed: {}", e))?;
+
+    // Read before `bytes()` consumes the response. Keeping these means the
+    // first poll of the feed can be conditional instead of a second full
+    // download of what we are about to parse here.
+    let etag = header_string(&response, reqwest::header::ETAG);
+    let last_modified = header_string(&response, reqwest::header::LAST_MODIFIED);
 
     let body = response
         .bytes()
@@ -592,5 +1062,54 @@ pub async fn test_feed_url(url: &str) -> Result<(String, String), String> {
         title.clone()
     };
 
-    Ok((title, site_name))
+    Ok(TestedFeed {
+        title,
+        site_name,
+        body,
+        etag,
+        last_modified,
+    })
+}
+
+/// Stores the articles of a feed that was just added, reusing the body already
+/// downloaded by `test_feed_url` instead of fetching the same URL again.
+///
+/// Returns how many articles were actually new. The validators are saved too,
+/// so the first scheduled poll is already conditional.
+pub fn import_tested_feed(
+    db: &Database,
+    feed_id: i64,
+    feed_url: &str,
+    tested: &TestedFeed,
+) -> Result<usize, String> {
+    // A feed created moments ago cannot have AI summaries forced on yet: that
+    // flag has its own endpoint and defaults to off in the schema.
+    let articles = parse_articles(
+        &tested.body,
+        feed_id,
+        feed_url,
+        false,
+        retention_cutoff(db),
+    )?;
+
+    let mut new_count = 0;
+    for article in &articles {
+        match db.insert_article(article) {
+            Ok(true) => new_count += 1,
+            Ok(false) => {}
+            Err(e) => tracing::warn!("Failed to insert article '{}': {}", article.url, e),
+        }
+    }
+
+    // Saved after the articles, so a failed insert cannot leave the feed
+    // marked as up to date with nothing stored.
+    if let Err(e) = db.set_feed_validators(
+        feed_id,
+        tested.etag.as_deref(),
+        tested.last_modified.as_deref(),
+    ) {
+        tracing::warn!("Failed to save validators for feed {}: {}", feed_id, e);
+    }
+
+    Ok(new_count)
 }

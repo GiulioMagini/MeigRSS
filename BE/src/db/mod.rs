@@ -56,6 +56,8 @@ impl Database {
                 is_web_feed      INTEGER NOT NULL DEFAULT 0,
                 web_feed_pattern TEXT NOT NULL DEFAULT '',
                 is_api_scraping  INTEGER NOT NULL DEFAULT 0,  -- 1 = fetch via rendering API, 0 = plain GET
+                etag             TEXT NOT NULL DEFAULT '',     -- last ETag returned by the server, sent back verbatim
+                last_modified    TEXT NOT NULL DEFAULT '',     -- last Last-Modified returned by the server, sent back verbatim
                 created_at       TEXT NOT NULL DEFAULT (datetime('now')),
                 FOREIGN KEY (category_id) REFERENCES categories(id)
             );
@@ -128,6 +130,26 @@ impl Database {
             // only option, so keep them on it to preserve their behaviour
             conn.execute(
                 "UPDATE feeds SET is_api_scraping = 1 WHERE is_web_feed = 1",
+                [],
+            )?;
+        }
+
+        // Migration: databases created before conditional GET support have no
+        // columns to store the HTTP validators sent back by the feed server.
+        // Both columns are always added together, so checking one is enough.
+        let has_validators = {
+            let mut stmt = conn.prepare(
+                "SELECT 1 FROM pragma_table_info('feeds') WHERE name = 'etag'",
+            )?;
+            stmt.exists([])?
+        };
+        if !has_validators {
+            conn.execute(
+                "ALTER TABLE feeds ADD COLUMN etag TEXT NOT NULL DEFAULT ''",
+                [],
+            )?;
+            conn.execute(
+                "ALTER TABLE feeds ADD COLUMN last_modified TEXT NOT NULL DEFAULT ''",
                 [],
             )?;
         }

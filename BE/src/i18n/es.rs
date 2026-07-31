@@ -35,6 +35,9 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("btn_api_not_configured", "API mal configurada");
     t.insert("btn_show_full_text", "Mostrar artículo completo");
     t.insert("btn_hide_full_text", "Ocultar artículo completo");
+    t.insert("btn_edit_full_text", "Editar el texto completo");
+    t.insert("btn_save_full_text", "Guardar el texto completo");
+    t.insert("full_text_too_long", "El texto introducido supera el tamaño máximo permitido.");
     t.insert("link_original", "Leer el artículo original");
 
     // Favorites
@@ -76,11 +79,14 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("feed_active", "Activo");
     t.insert("feed_paused", "En pausa");
     t.insert("feeds_auto_paused_title", "Feeds bloqueados");
-    t.insert("feeds_auto_paused_message", "Los siguientes feeds no han respondido y se han pausado automáticamente:");
+    t.insert("feeds_auto_paused_message", "Los siguientes feeds se han pausado automáticamente:");
     t.insert("feeds_auto_paused_hint", "Para desbloquearlos, ve a la página de gestión de feeds.");
+    t.insert("pause_reason_timeout", "(tiempo de espera agotado)");
+    t.insert("pause_reason_gone", "(feed eliminado)");
+    t.insert("pause_reason_too_many", "(demasiadas solicitudes)");
+    t.insert("pause_reason_too_many_retry", "(demasiadas solicitudes, intenta reactivarlo en {n})");
     t.insert("feed_enable_scraping", "Habilitar la descarga del texto completo");
     t.insert("feed_api_scraping", "Habilitar API de scraping");
-    t.insert("scraping_disabled", "Descarga del texto completo deshabilitada para este feed");
     t.insert("scraping_disclaimer", "La descarga del texto completo de los artículos queda a discreción del usuario. Antes de activarla, asegúrate de respetar las condiciones de uso del sitio en cuestión. El autor del software no es responsable del uso indebido de esta función.");
     t.insert("feed_delete", "Eliminar feed");
     t.insert("confirm_delete_feed", "Al eliminar este feed también se eliminarán todos los artículos asociados. ¿Continuar?");
@@ -157,6 +163,18 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("newsletter_feed_name_empty", "El nombre del feed no puede estar vacío");
     t.insert("newsletter_feed_exists", "Ya existe un feed de newsletter con este nombre");
     t.insert("newsletter_no_feeds", "No hay ningún feed de newsletter existente. Crea uno nuevo.");
+    t.insert("newsletter_mode_single", "Archivo único");
+    t.insert("newsletter_mode_folder", "Carpeta");
+    t.insert("newsletter_folder_description", "Selecciona una carpeta: se importarán todos los archivos EML que contenga, ignorando cualquier otro tipo de archivo.");
+    t.insert("newsletter_folder_selected", "{count} archivos EML listos para importar.");
+    t.insert("newsletter_folder_no_eml", "La carpeta seleccionada no contiene archivos EML.");
+    t.insert("newsletter_folder_too_many", "La carpeta contiene más de {max} archivos EML. Selecciona una con menos archivos.");
+    t.insert("newsletter_folder_too_large", "Los archivos seleccionados superan el tamaño máximo permitido para un solo envío.");
+    t.insert("newsletter_bulk_imported", "{count} newsletters importadas como artículos favoritos.");
+    t.insert("newsletter_bulk_none", "No se ha importado ninguna newsletter.");
+    t.insert("newsletter_bulk_duplicates", "{count} ya presentes en el archivo");
+    t.insert("newsletter_bulk_no_html", "{count} sin contenido HTML");
+    t.insert("newsletter_bulk_invalid", "{count} no reconocidos como correos válidos");
 
     // Web feed
     t.insert("web_feed_toggle_rss", "Feed RSS");

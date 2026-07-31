@@ -24,6 +24,11 @@ pub struct Feed {
     pub is_web_feed: bool,
     pub web_feed_pattern: String,
     pub is_api_scraping: bool,
+    // HTTP validators returned by the feed server, stored and sent back
+    // verbatim (quotes and the `W/` weak prefix included): they are opaque
+    // strings and must never be interpreted. Empty means "no validator yet".
+    pub etag: String,
+    pub last_modified: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -224,7 +229,7 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, 
-            is_web_feed, web_feed_pattern, is_api_scraping FROM feeds ORDER BY site_name ASC"
+            is_web_feed, web_feed_pattern, is_api_scraping, etag, last_modified FROM feeds ORDER BY site_name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(Feed {
@@ -239,6 +244,8 @@ impl Database {
                 is_web_feed: row.get::<_, i64>(8)? == 1,
                 web_feed_pattern: row.get(9)?,
                 is_api_scraping: row.get::<_, i64>(10)? == 1,
+                etag: row.get(11)?,
+                last_modified: row.get(12)?,
             })
         })?;
         rows.collect()
@@ -330,6 +337,45 @@ impl Database {
         conn.execute(
             "UPDATE feeds SET is_api_scraping = ?1 WHERE id = ?2",
             params![enable as i64, feed_id],
+        )
+    }
+
+    /// Stores the HTTP validators returned by a feed server on a `200`.
+    /// Each value is written only when the server actually sent the matching
+    /// header: `None` leaves the stored value untouched, so a server that sends
+    /// only one of the two never wipes the other.
+    pub fn set_feed_validators(
+        &self,
+        feed_id: i64,
+        etag: Option<&str>,
+        last_modified: Option<&str>,
+    ) -> Result<usize> {
+        // Neither header was sent: skip the write entirely
+        if etag.is_none() && last_modified.is_none() {
+            return Ok(0);
+        }
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE feeds
+             SET etag = COALESCE(?1, etag),
+                 last_modified = COALESCE(?2, last_modified)
+             WHERE id = ?3",
+            params![etag, last_modified, feed_id],
+        )
+    }
+
+    /// Replaces the feed URL after an unbroken chain of permanent redirects
+    /// (`301` / `308`) and clears both validators, since the stored ones belong
+    /// to the previous resource.
+    ///
+    /// `feeds.url` is `UNIQUE`, so this fails when the redirect target is
+    /// already subscribed as a separate feed: the caller must handle the error
+    /// and leave the original URL in place.
+    pub fn relocate_feed_url(&self, feed_id: i64, new_url: &str) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE feeds SET url = ?1, etag = '', last_modified = '' WHERE id = ?2",
+            params![new_url, feed_id],
         )
     }
 
@@ -585,6 +631,56 @@ impl Database {
         Ok(result > 0)
     }
 
+    /// Inserts a batch of newsletter articles in a single transaction and
+    /// returns how many rows were actually written.
+    ///
+    /// `INSERT OR IGNORE` lets the `url` uniqueness constraint do the
+    /// deduplication: a message already imported earlier, or repeated twice
+    /// inside the same batch, is silently skipped and is simply missing from
+    /// the returned count.
+    ///
+    /// Unlike `insert_article` this writes `is_favorite` inline, since
+    /// newsletters are always favorites: it saves one extra statement per row,
+    /// which is what makes a folder of several hundred files cheap.
+    pub fn insert_newsletter_articles(&self, articles: &[Article]) -> Result<u32> {
+        if articles.is_empty() {
+            return Ok(0);
+        }
+
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let mut inserted = 0u32;
+
+        // The statement borrows the transaction, so it has to go out of scope
+        // before the commit can consume it.
+        {
+            let mut stmt = tx.prepare(
+                "INSERT OR IGNORE INTO articles
+                 (id, feed_id, url, title, author, published_at, full_text, summary, summary_source, is_favorite, fetched_at, newsletter_html)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10, ?11)",
+            )?;
+
+            for article in articles {
+                inserted += stmt.execute(params![
+                    article.id,
+                    article.feed_id,
+                    article.url,
+                    article.title,
+                    article.author,
+                    article.published_at,
+                    article.full_text,
+                    article.summary,
+                    article.summary_source,
+                    article.fetched_at,
+                    article.newsletter_html,
+                ])? as u32;
+            }
+        }
+
+        tx.commit()?;
+        Ok(inserted)
+    }
+
     /// Updates the summary for an article (after LLM processing or manual trigger).
     pub fn update_article_summary(&self, article_id: &str, summary: &str, source: &str) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
@@ -708,7 +804,7 @@ impl Database {
     pub fn get_newsletter_feeds(&self) -> Result<Vec<Feed>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping
+            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping, etag, last_modified
              FROM feeds WHERE url LIKE 'newsletter://%' ORDER BY site_name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -724,6 +820,8 @@ impl Database {
                 is_web_feed: row.get::<_, i64>(8)? == 1,
                 web_feed_pattern: row.get(9)?,
                 is_api_scraping: row.get::<_, i64>(10)? == 1,
+                etag: row.get(11)?,
+                last_modified: row.get(12)?,
             })
         })?;
         rows.collect()
@@ -1025,7 +1123,7 @@ impl Database {
     pub fn get_active_web_feeds(&self) -> Result<Vec<Feed>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping
+            "SELECT id, url, title, site_name, category_id, force_ai_summary, enable_scraping, is_paused, is_web_feed, web_feed_pattern, is_api_scraping, etag, last_modified
              FROM feeds WHERE is_web_feed = 1 AND is_paused = 0 ORDER BY site_name ASC"
         )?;
         let rows = stmt.query_map([], |row| {
@@ -1041,6 +1139,8 @@ impl Database {
                 is_web_feed: row.get::<_, i64>(8)? == 1,
                 web_feed_pattern: row.get(9)?,
                 is_api_scraping: row.get::<_, i64>(10)? == 1,
+                etag: row.get(11)?,
+                last_modified: row.get(12)?,
             })
         })?;
         rows.collect()

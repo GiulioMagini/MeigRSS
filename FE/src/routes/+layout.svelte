@@ -48,16 +48,21 @@
         }
     }
 
-    onMount(async () => {
-        await initI18n();
-        // Save detected language to backend so console logs match
-        try {
-            await apiPut("/api/settings/language", { language: getCurrentLang() });
-        } catch (e) {
-            console.error("Failed to save language setting:", e);
-        }
-        isLoading = false;
+    onMount(() => {
+        // Registered synchronously so the cleanup can be returned to Svelte
         document.addEventListener("click", handleClickOutside);
+
+        (async () => {
+            await initI18n();
+            // Save detected language to backend so console logs match
+            try {
+                await apiPut("/api/settings/language", { language: getCurrentLang() });
+            } catch (e) {
+                console.error("Failed to save language setting:", e);
+            }
+            isLoading = false;
+        })();
+
         return () => document.removeEventListener("click", handleClickOutside);
     });
 </script>

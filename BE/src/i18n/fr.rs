@@ -35,13 +35,16 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("btn_api_not_configured", "API mal configurée");
     t.insert("btn_show_full_text", "Afficher l'article complet");
     t.insert("btn_hide_full_text", "Masquer l'article complet");
+    t.insert("btn_edit_full_text", "Modifier le texte complet");
+    t.insert("btn_save_full_text", "Enregistrer le texte complet");
+    t.insert("full_text_too_long", "Le texte saisi dépasse la taille maximale autorisée.");
     t.insert("link_original", "Lire l'article original");
 
     // Favorites
     t.insert("tooltip_add_favorite", "Ajouter aux favoris");
     t.insert("tooltip_remove_favorite", "Retirer des favoris");
     t.insert("confirm_remove_expired_favorite",
-        "Cet article a dépassé la durée de conservation. Le retirer des favoris le supprimera définitivement. Continuer ?");
+        "Cet article a dépassé la durée de conservation. Le retirer des favoris le supprimera définitivement. Continuer?");
 
     // Filters and sorting
     t.insert("sort_newest", "Plus récents");
@@ -76,11 +79,14 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("feed_active", "Actif");
     t.insert("feed_paused", "En pause");
     t.insert("feeds_auto_paused_title", "Flux bloqués");
-    t.insert("feeds_auto_paused_message", "Les flux suivants n'ont pas répondu et ont été mis en pause automatiquement :");
+    t.insert("feeds_auto_paused_message", "Les flux suivants ont été mis en pause automatiquement:");
     t.insert("feeds_auto_paused_hint", "Pour les débloquer, va dans la page de gestion des flux.");
+    t.insert("pause_reason_timeout", "(délai dépassé)");
+    t.insert("pause_reason_gone", "(flux supprimé)");
+    t.insert("pause_reason_too_many", "(trop de requêtes)");
+    t.insert("pause_reason_too_many_retry", "(trop de requêtes, réessaie de le réactiver dans {n})");
     t.insert("feed_enable_scraping", "Activer le téléchargement du texte complet");
     t.insert("feed_api_scraping", "Activer l'API de scraping");
-    t.insert("scraping_disabled", "Téléchargement du texte complet désactivé pour ce flux");
     t.insert("scraping_disclaimer", "Le téléchargement du texte complet des articles est à la discrétion de l'utilisateur. Avant de l'activer, assure-toi de respecter les conditions d'utilisation du site concerné. L'auteur du logiciel n'est pas responsable de l'usage abusif de cette fonctionnalité.");
     t.insert("feed_delete", "Supprimer le flux");
     t.insert("confirm_delete_feed", "La suppression de ce flux entraînera aussi la suppression de tous les articles associés. Continuer ?");
@@ -157,6 +163,18 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("newsletter_feed_name_empty", "Le nom du flux ne peut pas être vide");
     t.insert("newsletter_feed_exists", "Un flux newsletter portant ce nom existe déjà");
     t.insert("newsletter_no_feeds", "Aucun flux newsletter existant. Crées-en un nouveau.");
+    t.insert("newsletter_mode_single", "Fichier unique");
+    t.insert("newsletter_mode_folder", "Dossier");
+    t.insert("newsletter_folder_description", "Sélectionne un dossier : tous les fichiers EML qu'il contient seront importés, tout autre type de fichier est ignoré.");
+    t.insert("newsletter_folder_selected", "{count} fichiers EML prêts à être importés.");
+    t.insert("newsletter_folder_no_eml", "Le dossier sélectionné ne contient aucun fichier EML.");
+    t.insert("newsletter_folder_too_many", "Le dossier contient plus de {max} fichiers EML. Sélectionnes-en un avec moins de fichiers.");
+    t.insert("newsletter_folder_too_large", "Les fichiers sélectionnés dépassent la taille maximale autorisée pour un seul envoi.");
+    t.insert("newsletter_bulk_imported", "{count} newsletters importées comme articles favoris.");
+    t.insert("newsletter_bulk_none", "Aucune newsletter importée.");
+    t.insert("newsletter_bulk_duplicates", "{count} déjà présentes dans l'archive");
+    t.insert("newsletter_bulk_no_html", "{count} sans contenu HTML");
+    t.insert("newsletter_bulk_invalid", "{count} non reconnus comme des e-mails valides");
 
     // Web feed
     t.insert("web_feed_toggle_rss", "Flux RSS");

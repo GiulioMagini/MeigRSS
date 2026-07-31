@@ -2,7 +2,7 @@
 <!-- ArticleCard: Single article in the feed list.
      Expandable: click to show summary, full text, and action buttons. -->
 <script>
-    import { sanitize, stripHtml, apiPost, categoryNameDisplay } from "$lib/api.js";
+    import { sanitize, stripHtml, apiPost, apiPut, categoryNameDisplay } from "$lib/api.js";
     import { t } from "$lib/i18n.svelte.js";
 
     let { article = $bindable(), lastRefreshTimestamp, highlightKeywords, searchQuery, onMarkAsRead, onToggleFavorite, onGenerateSummary } = $props();
@@ -30,6 +30,10 @@
     let summaryError = $state("");
     let scrapeLoading = $state(false);
     let scrapeError = $state("");
+    let editingFullText = $state(false);
+    let fullTextDraft = $state("");
+    let saveLoading = $state(false);
+    let saveError = $state("");
 
     // Summary source label
     const sourceLabel = $derived(
@@ -38,14 +42,17 @@
         : ""
     );
 
-    // Disable AI summary button while scraping, if already generated, or if scraping is disabled (if is not newsletter)
+    // Disable AI summary button while loading, if already generated, or if there
+    // is no text to summarize. Scraping being off for the feed is irrelevant:
+    // the text may have been written by hand.
     const canGenerateSummary = $derived(
-        article.summary_source !== "llm" && !summaryLoading && !scrapeLoading && !!article.full_text && (article.enable_scraping || !!article.newsletter_html)
+        article.summary_source !== "llm" && !summaryLoading && !scrapeLoading && !!article.full_text
     );
 
-    // AI summary tooltip
+    // AI summary tooltip: when the button is off, say why
     const summaryTooltip = $derived(
         article.summary_source === "llm" ? t('btn_ai_summary_done')
+        : !article.full_text ? t('no_full_text')
         : t('btn_ai_summary')
     );
 
@@ -94,6 +101,48 @@
             }
         }
         scrapeLoading = false;
+    }
+
+    /**
+     * Enters edit mode on the full text, opening the text area if it is closed
+     * so the textarea is actually visible when the button is pressed.
+     */
+    function startEditFullText() {
+        fullTextDraft = article.full_text || "";
+        saveError = "";
+        editingFullText = true;
+        showFullText = true;
+    }
+
+    /**
+     * Leaves edit mode discarding the draft. Also called when the card is
+     * collapsed, so reopening it always shows the saved state.
+     */
+    function cancelEditFullText() {
+        editingFullText = false;
+        fullTextDraft = "";
+        saveError = "";
+    }
+
+    /**
+     * Persists the edited full text and leaves edit mode.
+     * Saving an empty text is allowed and clears the field.
+     */
+    async function saveFullText() {
+        saveLoading = true;
+        saveError = "";
+        try {
+            const res = await apiPut(`/api/articles/${article.id}/full-text`, { full_text: fullTextDraft });
+            if (res.success) {
+                article.full_text = fullTextDraft;
+                editingFullText = false;
+                fullTextDraft = "";
+            }
+        } catch (e) {
+            const errKey = e.message || "";
+            saveError = t(errKey) || errKey;
+        }
+        saveLoading = false;
     }
 
     // Automatically generate AI summary when scraping completes,
@@ -150,7 +199,7 @@
 
 <article class="card" class:expanded class:is-new={isNew} class:search-dimmed={!matchesSearch()}>
     <!-- Header row: always visible -->
-    <div class="card-header" role="button" tabindex="0" onclick={() => { expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } }} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } } }}>
+    <div class="card-header" role="button" tabindex="0" onclick={() => { expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } else { cancelEditFullText(); } }} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } else { cancelEditFullText(); } } }}>
         <div class="header-left">
             <span class="site-badge">{sanitize({ input: article.site_name })}</span>
             <span class="category-badge">{sanitize({ input: categoryNameDisplay(article.category_name, t) })}</span>
@@ -204,7 +253,7 @@
             <div class="actions">
                 <!-- AI Summary button -->
                 <button class="action-btn" class:disabled={!canGenerateSummary}
-                    title={!article.enable_scraping ? t('scraping_disabled') : summaryTooltip}
+                    title={summaryTooltip}
                     disabled={!canGenerateSummary}
                     onclick={handleGenerateSummary}>
                     <span class="material-icons">{summaryLoading || scrapeLoading ? 'hourglass_empty' : 'auto_awesome'}</span>
@@ -218,9 +267,8 @@
                 </button>
 
                 <!-- Show full text -->
-                <button class="action-btn" class:disabled={!article.enable_scraping && !article.newsletter_html || (scrapeLoading && !article.full_text)}
-                    disabled={(!article.enable_scraping && !article.newsletter_html) || (scrapeLoading && !article.full_text)}
-                    title={!article.enable_scraping && !article.newsletter_html ? t('scraping_disabled') : ''}
+                <button class="action-btn" class:disabled={scrapeLoading && !article.full_text}
+                    disabled={scrapeLoading && !article.full_text}
                     onclick={() => showFullText = !showFullText}>
                     <span class="material-icons">{scrapeLoading && !article.full_text ? 'hourglass_empty' : (showFullText ? 'visibility_off' : 'visibility')}</span>
                     {#if scrapeLoading && !article.full_text}
@@ -231,6 +279,23 @@
                         {t('btn_show_full_text')}
                     {/if}
                 </button>
+
+                <!-- Manual editing of the full text -->
+                {#if editingFullText}
+                    <button class="action-btn" disabled={saveLoading} onclick={saveFullText}>
+                        <span class="material-icons">{saveLoading ? 'hourglass_empty' : 'save'}</span>
+                        {saveLoading ? t('loading') : t('btn_save_full_text')}
+                    </button>
+                    <button class="action-btn" disabled={saveLoading} onclick={cancelEditFullText}>
+                        <span class="material-icons">close</span>
+                        {t('confirm_no')}
+                    </button>
+                {:else}
+                    <button class="action-btn" onclick={startEditFullText}>
+                        <span class="material-icons">edit</span>
+                        {t('btn_edit_full_text')}
+                    </button>
+                {/if}
 
                 <!-- Link to original article or to the email html -->
                 {#if article.newsletter_html}
@@ -249,7 +314,12 @@
             <!-- Full text (expandable) -->
             {#if showFullText}
                 <div class="full-text">
-                    {#if article.full_text}
+                    {#if editingFullText}
+                        <textarea class="text-editor" bind:value={fullTextDraft}></textarea>
+                        {#if saveError}
+                            <p class="error-msg">{saveError}</p>
+                        {/if}
+                    {:else if article.full_text}
                         <pre class="text-content">{@html highlightText(article.full_text, highlightKeywords)}</pre>
                     {:else}
                         <p class="no-content">{t('no_full_text')}</p>
@@ -515,6 +585,26 @@
         white-space: pre-wrap;
         word-wrap: break-word;
         font-family: 'IBM Plex Sans', sans-serif;
+    }
+
+    .text-editor {
+        width: 100%;
+        min-height: 18rem;
+        resize: vertical;
+        box-sizing: border-box;
+        padding: 0.6rem;
+        border: 1px solid #d5d5d5;
+        border-radius: 4px;
+        background: #fff;
+        font-size: 0.85rem;
+        line-height: 1.65;
+        color: #333;
+        font-family: 'IBM Plex Sans', sans-serif;
+    }
+
+    .text-editor:focus {
+        outline: none;
+        border-color: #999;
     }
 
     .no-content {

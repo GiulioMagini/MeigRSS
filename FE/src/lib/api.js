@@ -4,7 +4,7 @@
  * All fetch calls go through here for consistent error handling,
  * sanitization, and environment-aware URL resolution.
  */
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
 
 // Environment-aware backend URL
 const BACKEND_URL = (() => {
@@ -91,6 +91,25 @@ export async function apiPost(path, body = {}) {
             "Accept": "application/json"
         },
         body: JSON.stringify(body)
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(err.error || `Request failed: ${response.status}`);
+    }
+    return response.json();
+}
+
+/**
+ * Makes a POST request to the backend API with a multipart/form-data body.
+ * The Content-Type header is deliberately left unset: the browser writes it
+ * itself together with the multipart boundary, and setting it by hand produces
+ * a body the server cannot split back into fields.
+ */
+export async function apiPostForm(path, formData) {
+    const response = await fetch(`${BACKEND_URL}${path}`, {
+        method: "POST",
+        headers: { "Accept": "application/json" },
+        body: formData
     });
     if (!response.ok) {
         const err = await response.json().catch(() => ({ error: response.statusText }));

@@ -149,7 +149,7 @@
                 if (noInternet) {
                     connectionError = true;
                 } else {
-                    const newlyPaused = res.data.filter(r => r.auto_paused);
+                    const newlyPaused = res.data.filter(r => r.pause_reason);
                     if (newlyPaused.length > 0) {
                         pausedFeeds = newlyPaused;
                         showPausedPopup = true;
@@ -163,6 +163,20 @@
             connectionError = true;
         }
         setLoading(false);
+    }
+
+    // Renders the pause reason shown next to a feed name in the auto-pause
+    // modal. The backend sends the i18n key already chosen, plus the raw
+    // Retry-After delay in seconds when a 429 provided one.
+    //
+    // Minutes up to two hours, hours above that: a delay of a full day reads as
+    // "1440 min" otherwise, which tells the user nothing. The abbreviations are
+    // the same in every supported language, so they need no translation, and
+    // they sidestep the singular form at exactly one unit.
+    function pauseReasonLabel(feed) {
+        const minutes = Math.max(1, Math.ceil((feed.retry_after_seconds ?? 0) / 60));
+        const delay = minutes <= 120 ? `${minutes} min` : `${Math.ceil(minutes / 60)} h`;
+        return t(feed.pause_reason).replace("{n}", delay);
     }
 
     // Toggle favorite
@@ -227,13 +241,18 @@
         isRefreshing = false;
     }
 
-    onMount(async () => {
-        await loadRefreshTimestamp();
-        await loadCategories();
-        await loadArticles();
+    onMount(() => {
+        // The cleanup is returned synchronously on purpose: Svelte ignores the
+        // return value of an async callback, so the interval would never be
+        // cleared and every remount would add another one.
+        (async () => {
+            await loadRefreshTimestamp();
+            await loadCategories();
+            await loadArticles();
 
-        // Start polling only if auto-update is enabled
-        startPollingIfNeeded();
+            // Start polling only if auto-update is enabled
+            startPollingIfNeeded();
+        })();
 
         return () => {
             if (pollInterval) clearInterval(pollInterval);
@@ -384,7 +403,10 @@
                 <p class="modal-text">{t('feeds_auto_paused_message')}</p>
                 <ul class="paused-list">
                     {#each pausedFeeds as feed}
-                        <li>{feed.feed_name}</li>
+                        <li>
+                            {feed.feed_name}
+                            <span class="paused-reason">{pauseReasonLabel(feed)}</span>
+                        </li>
                     {/each}
                 </ul>
                 <p class="modal-hint">{t('feeds_auto_paused_hint')}</p>
@@ -670,6 +692,11 @@
         font-size: 0.85rem;
         font-weight: 500;
         color: #1a1a1a;
+    }
+
+    .paused-reason {
+        font-weight: 400;
+        color: #888;
     }
 
     .modal-hint {

@@ -81,6 +81,9 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("btn_api_not_configured", "API non configurata correttamente");
     t.insert("btn_show_full_text", "Mostra articolo completo");
     t.insert("btn_hide_full_text", "Nascondi articolo completo");
+    t.insert("btn_edit_full_text", "Modifica testo completo");
+    t.insert("btn_save_full_text", "Salva testo completo");
+    t.insert("full_text_too_long", "Il testo inserito supera la dimensione massima consentita.");
     t.insert("link_original", "Leggi l'articolo originale");
 
     // Favorites
@@ -122,11 +125,14 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("feed_active", "Attivo");
     t.insert("feed_paused", "In pausa");
     t.insert("feeds_auto_paused_title", "Feed bloccati");
-    t.insert("feeds_auto_paused_message", "I seguenti feed non hanno risposto e sono stati messi in pausa automaticamente:");
+    t.insert("feeds_auto_paused_message", "I seguenti feed sono stati messi in pausa automaticamente:");
     t.insert("feeds_auto_paused_hint", "Per sbloccarli, vai nella pagina di gestione dei feed.");
+    t.insert("pause_reason_timeout", "(timeout)");
+    t.insert("pause_reason_gone", "(feed cancellato)");
+    t.insert("pause_reason_too_many", "(troppe richieste)");
+    t.insert("pause_reason_too_many_retry", "(troppe richieste, riprovare a togliere dalla pausa tra {n})");
     t.insert("feed_enable_scraping", "Abilita scaricamento testo completo");
     t.insert("feed_api_scraping", "Abilita API scraping");
-    t.insert("scraping_disabled", "Scaricamento testo completo disabilitato per questo feed");
     t.insert("scraping_disclaimer", "Lo scaricamento del testo completo degli articoli è a discrezione dell'utente. Prima di attivarlo, assicurati di rispettare i termini di utilizzo del sito in questione. L'autore del software non è responsabile dell'uso improprio di questa funzionalità.");
     t.insert("feed_delete", "Rimuovi feed");
     t.insert("confirm_delete_feed", "Eliminando questo feed verranno eliminati anche tutti gli articoli associati. Continuare?");
@@ -203,6 +209,18 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("newsletter_feed_name_empty", "Il nome del feed non può essere vuoto");
     t.insert("newsletter_feed_exists", "Esiste già un feed newsletter con questo nome");
     t.insert("newsletter_no_feeds", "Nessun feed newsletter esistente. Creane uno nuovo.");
+    t.insert("newsletter_mode_single", "File singolo");
+    t.insert("newsletter_mode_folder", "Cartella");
+    t.insert("newsletter_folder_description", "Seleziona una cartella: verranno importati tutti i file EML contenuti al suo interno, ignorando ogni altro tipo di file.");
+    t.insert("newsletter_folder_selected", "{count} file EML pronti per l'importazione.");
+    t.insert("newsletter_folder_no_eml", "La cartella selezionata non contiene file EML.");
+    t.insert("newsletter_folder_too_many", "La cartella contiene più di {max} file EML. Selezionane una con meno file.");
+    t.insert("newsletter_folder_too_large", "I file selezionati superano la dimensione massima consentita per un singolo invio.");
+    t.insert("newsletter_bulk_imported", "{count} newsletter importate come articoli preferiti.");
+    t.insert("newsletter_bulk_none", "Nessuna newsletter importata.");
+    t.insert("newsletter_bulk_duplicates", "{count} già presenti in archivio");
+    t.insert("newsletter_bulk_no_html", "{count} senza contenuto HTML");
+    t.insert("newsletter_bulk_invalid", "{count} non riconosciuti come email valide");
 
     // Web feed
     t.insert("web_feed_toggle_rss", "Feed RSS");
@@ -269,6 +287,9 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("btn_api_not_configured", "API not configured correctly");
     t.insert("btn_show_full_text", "Show full article");
     t.insert("btn_hide_full_text", "Hide full article");
+    t.insert("btn_edit_full_text", "Edit full text");
+    t.insert("btn_save_full_text", "Save full text");
+    t.insert("full_text_too_long", "The text you entered exceeds the maximum allowed size.");
     t.insert("link_original", "Read original article");
 
     // Favorites
@@ -310,11 +331,14 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("feed_active", "Active");
     t.insert("feed_paused", "Paused");
     t.insert("feeds_auto_paused_title", "Feeds paused");
-    t.insert("feeds_auto_paused_message", "The following feeds did not respond and have been automatically paused:");
+    t.insert("feeds_auto_paused_message", "The following feeds have been automatically paused:");
     t.insert("feeds_auto_paused_hint", "To resume them, go to the feed management page.");
+    t.insert("pause_reason_timeout", "(timeout)");
+    t.insert("pause_reason_gone", "(feed deleted)");
+    t.insert("pause_reason_too_many", "(too many requests)");
+    t.insert("pause_reason_too_many_retry", "(too many requests, try to unpause it in {n})");
     t.insert("feed_enable_scraping", "Enable full text download");
     t.insert("feed_api_scraping", "Enable scraping API");
-    t.insert("scraping_disabled", "Full text download is disabled for this feed");
     t.insert("scraping_disclaimer", "Downloading the full text of articles is at the user's discretion. Before enabling it, make sure you comply with the terms of use of the website in question. The software author is not responsible for any misuse of this feature.");
     t.insert("feed_delete", "Remove feed");
 
@@ -388,6 +412,18 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("newsletter_feed_name_empty", "Feed name cannot be empty");
     t.insert("newsletter_feed_exists", "A newsletter feed with this name already exists");
     t.insert("newsletter_no_feeds", "No newsletter feeds exist yet. Create a new one.");
+    t.insert("newsletter_mode_single", "Single file");
+    t.insert("newsletter_mode_folder", "Folder");
+    t.insert("newsletter_folder_description", "Select a folder: every EML file inside it will be imported, any other file type is ignored.");
+    t.insert("newsletter_folder_selected", "{count} EML files ready to import.");
+    t.insert("newsletter_folder_no_eml", "The selected folder contains no EML files.");
+    t.insert("newsletter_folder_too_many", "The folder contains more than {max} EML files. Select one with fewer files.");
+    t.insert("newsletter_folder_too_large", "The selected files exceed the maximum size allowed for a single upload.");
+    t.insert("newsletter_bulk_imported", "{count} newsletters imported as favorite articles.");
+    t.insert("newsletter_bulk_none", "No newsletter imported.");
+    t.insert("newsletter_bulk_duplicates", "{count} already in the archive");
+    t.insert("newsletter_bulk_no_html", "{count} without HTML content");
+    t.insert("newsletter_bulk_invalid", "{count} not recognized as valid emails");
 
     // Web feed
     t.insert("web_feed_toggle_rss", "RSS Feed");
