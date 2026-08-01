@@ -31,6 +31,7 @@
   <a href="https://github.com/GiulioMagini/MeigRSS/releases">
     <img src="https://img.shields.io/github/v/release/GiulioMagini/MeigRSS?label=Latest%20Release" alt="Latest Release">
   </a>
+  &nbsp;
   <a href="https://github.com/GiulioMagini/MeigRSS/stargazers">
     <img src="https://img.shields.io/github/stars/GiulioMagini/MeigRSS" alt="GitHub Stars">
   </a>
@@ -40,6 +41,7 @@
   <a href="https://github.com/GiulioMagini/MeigRSS/releases/latest/download/MeigRSS.Windows.7z">
     <img alt="Self-hosted" src="https://img.shields.io/badge/DOWNLOAD (WINDOWS)-51945b?style=for-the-badge">
   </a>
+  &nbsp;
   <a href="https://www.youtube.com/watch?v=J4hxeypqo68"><img alt="Video explanation in Italian" src="https://img.shields.io/badge/Video%20explanation-Italian-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
 </p>
 
@@ -48,7 +50,7 @@ MeigRSS is a local news aggregator with AI-powered summaries. It collects articl
 **IMPORTANT**: <mark style="background-color: gold;">The software author **does not endorse the use of the site scaping feature for small hosts**, and suggest to use it only for high-traffic news sites with no RSS.</mark>
 
 <p align="center">
-  <img src="Screenshots/Screenshot_1.gif" alt="MeigRSS" width="800">
+  <img src="Screenshots/Screenshot_1.gif" alt="MeigRSS">
 </p>
 
 ### 🤔 Why using MeigRSS?
@@ -56,7 +58,7 @@ MeigRSS is a local news aggregator with AI-powered summaries. It collects articl
 FreshRSS and Miniflux read feeds, MeigRSS also reads what a feed doesn't have: it turns sites that don't display one into feeds, as well as newsletters you receive via email (import .eml files, even entire folders). Each article can be summarized by AI, and the full text can be retrieved or manually rewritten when the source publishes only the preview. Rust + SQLite backend: one binary, no account, no cloud - unlike Feedly and Inoreader, your feeds and data remain on your own machine.
 
 <p align="center">
-  <img src="Screenshots/Screenshot_2.gif" alt="MeigRSS" width="800">
+  <img src="Screenshots/Screenshot_2.gif" alt="MeigRSS">
 </p>
 
 You can find all the functionality explanation [in this video](https://www.youtube.com/watch?v=J4hxeypqo68).
