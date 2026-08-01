@@ -1,1 +1,0 @@
-Developed with the assistance of Claude, Anthropic
