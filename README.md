@@ -28,21 +28,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/GiulioMagini/MeigRSS/releases">
-    <img src="https://img.shields.io/github/v/release/GiulioMagini/MeigRSS?label=Latest%20Release" alt="Latest Release">
-  </a>
-  &nbsp;
-  <a href="https://github.com/GiulioMagini/MeigRSS/stargazers">
-    <img src="https://img.shields.io/github/stars/GiulioMagini/MeigRSS" alt="GitHub Stars">
-  </a>
+  <a href="https://github.com/GiulioMagini/MeigRSS/releases"><img src="https://img.shields.io/github/v/release/GiulioMagini/MeigRSS?label=Latest%20Release" alt="Latest Release"></a>&nbsp;<a href="https://github.com/GiulioMagini/MeigRSS/stargazers"><img src="https://img.shields.io/github/stars/GiulioMagini/MeigRSS" alt="GitHub Stars"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/GiulioMagini/MeigRSS/releases/latest/download/MeigRSS.Windows.7z">
-    <img alt="Self-hosted" src="https://img.shields.io/badge/DOWNLOAD (WINDOWS)-51945b?style=for-the-badge">
-  </a>
-  &nbsp;
-  <a href="https://www.youtube.com/watch?v=J4hxeypqo68"><img alt="Video explanation in Italian" src="https://img.shields.io/badge/Video%20explanation-Italian-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
+  <a href="https://github.com/GiulioMagini/MeigRSS/releases/latest/download/MeigRSS.Windows.7z"><img alt="Self-hosted" src="https://img.shields.io/badge/DOWNLOAD (WINDOWS)-51945b?style=for-the-badge"></a>&nbsp;<a href="https://www.youtube.com/watch?v=J4hxeypqo68"><img alt="Video explanation in Italian" src="https://img.shields.io/badge/Video%20explanation-Italian-FF0000?style=for-the-badge&logo=youtube&logoColor=white"></a>
 </p>
 
 MeigRSS is a local news aggregator with AI-powered summaries. It collects articles from configured **RSS feeds**, **newsletter** (EML files) and **web feed** (with GET request from the program or external API if the site blocks GET requests); extracts full text on demand, and **generates summaries via AI APIs** (Mistral, OpenAI, Claude, Gemini).
