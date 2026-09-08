@@ -313,19 +313,17 @@ MeigRSS supports four AI providers for summary generation:
 
 | Provider | Model | Free plan |
 |---|---|---|
-| **Mistral Small** (default) | mistral-small-latest | Yes (Experiment) |
-| **Mistral Large** | mistral-large-latest | Yes (Experiment) |
+| **Mistral 500 chars** (default) | Ministral 3 8B | Yes (Free mode) |
+| **Mistral 1000 chars** | Ministral 3 14B | Yes (Free mode) |
 | OpenAI | gpt-5.6-luna | No |
 | Claude | claude-haiku-4-5 | No |
-| Gemini | gemini-3.6-flash | Yes (with limits) |
+| Gemini | gemini-3.5-flash-lite | Yes (with limits) |
 
-The summary prompt adapts to the UI language and to the model: Mistral Small generates shorter summaries (3-5 sentences, 500 chars) while other models generate longer ones (3-10 sentences, 1000 chars).
-
-Rate limiting is applied only for Mistral models (2 requests per minute, matching the free plan limits). Other providers are not rate-limited.
+The summary prompt adapts to the UI language and to the model: Mistral 500 chars generates shorter summaries (3-5 sentences, 500 chars) while other models generate longer ones (3-10 sentences, 1000 chars).
 
 ### Creating a free Mistral account
 
-Mistral offers a free "Experiment" plan that provides access to all models, including Small and Large. No credit card required.
+Mistral offers a free plan with limits, including Small and Large. Check their site for more information.
 
 1. Go to [console.mistral.ai](https://console.mistral.ai) and create an account
 2. In the **Subscription** section, click **Experiment for free**
@@ -333,21 +331,16 @@ Mistral offers a free "Experiment" plan that provides access to all models, incl
 4. Go to the **API Keys** section and generate a new key
 5. **Copy it immediately** - it is shown only once
 
-Experiment plan limits:
-- 1 billion tokens per month
-- Restrictive rate limit (2 requests per minute - automatically handled by MeigRSS)
-- Requests may be used to train Mistral's models
-
 ### Saving the API key in MeigRSS
 
 1. Go to **Settings > API Configuration**
-2. Select the provider (Mistral Small is recommended for summaries)
+2. Select the provider (Mistral 500 chars is recommended for summaries)
 3. Paste the API key
 4. Click **Save and test**
 
 The key is encrypted with AES-256-GCM and stored in the database. It is never exposed in plain text by any endpoint. The currently saved provider and masked key are displayed in the configuration page.
 
-> **Note:** Mistral Small and Mistral Large use the same API key. Mistral Small is recommended for summaries: it's faster, uses fewer tokens, and the quality is more than sufficient for 3-5 sentence summaries.
+> **Note:** Mistral 500 chars and Mistral 1000 chars use the same API key. Mistral 500 chars is recommended for summaries: it's faster and uses fewer tokens. If articles are long or complex, use Mistral 1000 chars.
 
 ### Plan information
 

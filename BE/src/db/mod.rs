@@ -83,7 +83,7 @@ impl Database {
             -- API provider configuration (single row, updated in place)
             CREATE TABLE IF NOT EXISTS api_config (
                 id              INTEGER PRIMARY KEY CHECK (id = 1),  -- enforce single row
-                provider        TEXT NOT NULL DEFAULT 'mistral',
+                provider        TEXT NOT NULL DEFAULT 'mistral_500_chars',
                 api_key_enc     TEXT NOT NULL DEFAULT '',            -- encrypted API key
                 encryption_iv   TEXT NOT NULL DEFAULT '',            -- initialization vector for decryption
                 updated_at      TEXT NOT NULL DEFAULT (datetime('now'))

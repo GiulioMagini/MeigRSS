@@ -4,8 +4,8 @@ pub mod encryption;
 /// Each provider has its own endpoint URL and authentication format.
 #[derive(Debug, Clone, PartialEq)]
 pub enum LlmProvider {
-    MistralSmall,
-    MistralLarge,
+    Mistral500Chars,
+    Mistral1000Chars,
     OpenAI,
     Claude,
     Gemini,
@@ -15,8 +15,12 @@ impl LlmProvider {
     /// Parses a provider string from the database into the enum variant.
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
-            "mistral_small" => Some(Self::MistralSmall),
-            "mistral_large" => Some(Self::MistralLarge),
+            "mistral_500_chars" => Some(Self::Mistral500Chars),
+            "mistral_1000_chars" => Some(Self::Mistral1000Chars),
+            // Legacy values written by versions that named the Mistral providers
+            // after the underlying models, kept so existing databases keep working
+            "mistral_small" => Some(Self::Mistral500Chars),
+            "mistral_large" => Some(Self::Mistral1000Chars),
             "openai" => Some(Self::OpenAI),
             "claude" => Some(Self::Claude),
             "gemini" => Some(Self::Gemini),
@@ -26,8 +30,8 @@ impl LlmProvider {
 
     pub fn as_str(&self) -> &'static str {
         match self {
-            Self::MistralSmall => "mistral_small",
-            Self::MistralLarge => "mistral_large",
+            Self::Mistral500Chars => "mistral_500_chars",
+            Self::Mistral1000Chars => "mistral_1000_chars",
             Self::OpenAI => "openai",
             Self::Claude => "claude",
             Self::Gemini => "gemini",
@@ -35,14 +39,21 @@ impl LlmProvider {
     }
 
     /// Returns the text generation endpoint URL for the provider.
-    pub fn chat_endpoint(&self) -> &'static str {
+    /// Gemini encodes the model name in the URL path, so the endpoint is built
+    /// from `default_model()` to keep a single source of truth for the model.
+    pub fn chat_endpoint(&self) -> String {
         match self {
-            Self::MistralSmall | Self::MistralLarge => "https://api.mistral.ai/v1/chat/completions",
+            Self::Mistral500Chars | Self::Mistral1000Chars => {
+                "https://api.mistral.ai/v1/chat/completions".to_string()
+            }
             // OpenAI Responses API: the current-generation endpoint, successor of
             // Chat Completions (which is now considered a legacy path for GPT-5.x models)
-            Self::OpenAI => "https://api.openai.com/v1/responses",
-            Self::Claude => "https://api.anthropic.com/v1/messages",
-            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent",
+            Self::OpenAI => "https://api.openai.com/v1/responses".to_string(),
+            Self::Claude => "https://api.anthropic.com/v1/messages".to_string(),
+            Self::Gemini => format!(
+                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+                self.default_model()
+            ),
         }
     }
 
@@ -51,14 +62,19 @@ impl LlmProvider {
     /// fast, low-cost tiers are preferred over frontier models.
     pub fn default_model(&self) -> &'static str {
         match self {
-            Self::MistralSmall => "mistral-small-latest",
-            Self::MistralLarge => "mistral-large-latest",
+            // Ministral 3 8B: same API and key as the Mistral models, but not
+            // aliased to the Vibe CLI models, so it is not capped by the Vibe budget
+            Self::Mistral500Chars => "ministral-8b-latest",
+            // Ministral 3 14B: top tier of the same family, used for longer summaries
+            Self::Mistral1000Chars => "ministral-14b-latest",
             // GPT-5.6 Luna: OpenAI's cost-optimized tier for high-volume workloads,
-            // the coherent choice for short summaries ($1/$6 per MTok)
+            // the coherent choice for short summaries ($0.20/$1.20 per MTok after the
+            // July 2026 price cut). GPT-6 Astra has no low-cost variant.
             Self::OpenAI => "gpt-5.6-luna",
             // Fastest and most cost-effective Claude tier, ideal for simple summaries
             Self::Claude => "claude-haiku-4-5",
-            Self::Gemini => "gemini-3.6-flash",
+            // Choose to pass to the most recent Flash Lite version
+            Self::Gemini => "gemini-3.5-flash-lite",
         }
     }
 
@@ -66,8 +82,8 @@ impl LlmProvider {
     /// Some providers don't expose this via API.
     pub fn usage_endpoint(&self) -> Option<&'static str> {
         match self {
-            Self::MistralSmall | Self::MistralLarge => None,
-            // OpenAI's usage endpoint requires an admin key and date parameters,
+            Self::Mistral500Chars | Self::Mistral1000Chars => None,
+            // Now OpenAI's usage endpoint requires an admin key and date parameters,
             // so it always fails with a regular API key; ask the model instead
             Self::OpenAI => None,
             Self::Claude => None,
@@ -81,7 +97,7 @@ impl LlmProvider {
         // Even without a dedicated endpoint, we can ask the model itself.
         // Only return false if neither approach works.
         match self {
-            Self::MistralSmall | Self::MistralLarge => true,
+            Self::Mistral500Chars | Self::Mistral1000Chars => true,
             Self::OpenAI => true,
             Self::Claude => true,
             Self::Gemini => true,

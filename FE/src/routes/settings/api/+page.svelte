@@ -8,7 +8,7 @@
     const setLoading = getContext("setLoading");
 
     let savedProvider = $state("");
-    let selectedProvider = $state("mistral_small");
+    let selectedProvider = $state("mistral_500_chars");
     let apiKey = $state("");
     let keyStatus = $state("");
     let supportsUsage = $state(true);
@@ -100,8 +100,8 @@
 
     // ─── AI API state ─────────────────────────────────────
     const providers = [
-        { value: "mistral_small", label: "Mistral Small" },
-        { value: "mistral_large", label: "Mistral Large" },
+        { value: "mistral_500_chars", label: "Mistral 500 chars" },
+        { value: "mistral_1000_chars", label: "Mistral 1000 chars" },
         { value: "openai", label: "OpenAI API" },
         { value: "claude", label: "Claude API" },
         { value: "gemini", label: "Gemini API" },
@@ -169,7 +169,7 @@
             await apiDelete("/api/config/api");
             savedProvider = "";
             keyStatus = "";
-            selectedProvider = "mistral_small";
+            selectedProvider = "mistral_500_chars";
             apiKey = "";
             testResult = null;
             planInfo = "";

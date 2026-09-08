@@ -1,48 +1,20 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
-use tokio::time::{Duration, Instant};
 
 use crate::config::LlmProvider;
 use crate::config::encryption;
 use crate::db::Database;
 
-/// Rate limiter to respect API call limits (default: 2 req/min for Mistral free plan).
-pub struct RateLimiter {
-    last_call: Mutex<Instant>,
-    min_interval: Duration,
-}
-
-impl RateLimiter {
-    pub fn new(requests_per_minute: u32) -> Self {
-        let interval_ms = 60_000 / requests_per_minute as u64;
-        Self {
-            last_call: Mutex::new(Instant::now() - Duration::from_millis(interval_ms)),
-            min_interval: Duration::from_millis(interval_ms),
-        }
-    }
-
-    /// Waits until enough time has passed since the last API call.
-    pub async fn wait(&self) {
-        let mut last = self.last_call.lock().await;
-        let elapsed = last.elapsed();
-        if elapsed < self.min_interval {
-            tokio::time::sleep(self.min_interval - elapsed).await;
-        }
-        *last = Instant::now();
-    }
-}
-
 /// Builds the summary prompt based on the provider and UI language.
-/// Mistral Small gets a shorter summary (3-5 sentences, 500 chars),
-/// other models get a longer one (3-10 sentences, 1000 chars).
+/// The 500-chars provider gets a shorter summary (3-5 sentences, 500 chars),
+/// every other provider gets a longer one (3-10 sentences, 1000 chars).
 /// The prompt is written entirely in the target language, which anchors
 /// the output language better than an English instruction to translate.
 /// Any unrecognized language falls back to the English prompt.
 fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) -> String {
-    let is_small = matches!(provider, LlmProvider::MistralSmall);
+    let is_short = matches!(provider, LlmProvider::Mistral500Chars);
 
-    let (sentences, max_chars) = if is_small {
+    let (sentences, max_chars) = if is_short {
         ("3-5", "500")
     } else {
         ("3-10", "1000")
@@ -270,14 +242,12 @@ struct GeminiResponseContent {
 /// Main LLM client that handles summary generation across different providers.
 pub struct LlmClient {
     http_client: Client,
-    rate_limiter: RateLimiter,
 }
 
 impl LlmClient {
     pub fn new() -> Self {
         Self {
             http_client: Client::new(),
-            rate_limiter: RateLimiter::new(2), // 2 req/min for Mistral free plan
         }
     }
 
@@ -306,17 +276,9 @@ impl LlmClient {
         // Build the prompt based on provider and language
         let prompt = build_summary_prompt(article_text, &provider, lang);
 
-        // Respect rate limiting only for Mistral (free plan has 2 req/min limit)
-        match provider {
-            LlmProvider::MistralSmall | LlmProvider::MistralLarge => {
-                self.rate_limiter.wait().await;
-            }
-            _ => {}
-        }
-
         // Route to the appropriate provider implementation
         match provider {
-            LlmProvider::MistralSmall | LlmProvider::MistralLarge => {
+            LlmProvider::Mistral500Chars | LlmProvider::Mistral1000Chars => {
                 self.call_mistral(&api_key, &provider, &prompt).await
             }
             LlmProvider::OpenAI => {
@@ -516,7 +478,7 @@ impl LlmClient {
         let test_prompt = "Reply only with: OK";
 
         match provider {
-            LlmProvider::MistralSmall | LlmProvider::MistralLarge => {
+            LlmProvider::Mistral500Chars | LlmProvider::Mistral1000Chars => {
                 self.call_mistral(api_key, provider, test_prompt).await
             }
             LlmProvider::OpenAI => {
@@ -559,8 +521,8 @@ impl LlmClient {
 
         // Build a provider-specific prompt for plan information
         let provider_name = match provider {
-            LlmProvider::MistralSmall => "Mistral AI (Mistral Small model)",
-            LlmProvider::MistralLarge => "Mistral AI (Mistral Large model)",
+            LlmProvider::Mistral500Chars => "Mistral AI (Ministral 3 8B model)",
+            LlmProvider::Mistral1000Chars => "Mistral AI (Ministral 3 14B model)",
             LlmProvider::OpenAI => "OpenAI",
             LlmProvider::Claude => "Anthropic Claude",
             LlmProvider::Gemini => "Google Gemini",
@@ -593,7 +555,7 @@ impl LlmClient {
         );
 
         match provider {
-            LlmProvider::MistralSmall | LlmProvider::MistralLarge => {
+            LlmProvider::Mistral500Chars | LlmProvider::Mistral1000Chars => {
                 self.call_mistral(api_key, provider, &info_prompt).await
             }
             LlmProvider::OpenAI => {
