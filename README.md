@@ -40,7 +40,7 @@ MeigRSS is a local news aggregator with AI-powered summaries. It collects articl
 **IMPORTANT**: <mark style="background-color: gold;">The software author **does not endorse the use of the site scaping feature for small hosts**, and suggest to use it only for high-traffic news sites with no RSS.</mark>
 
 <p align="center">
-  <img src="Screenshots/Screenshot_1.gif" alt="MeigRSS">
+  <img src="https://giuliomagini.com/images/gifs/MeigRSS_screenshot_1.gif" alt="MeigRSS">
 </p>
 
 ### 🤔 Why using MeigRSS?
@@ -48,7 +48,7 @@ MeigRSS is a local news aggregator with AI-powered summaries. It collects articl
 FreshRSS and Miniflux read feeds, MeigRSS also reads what a feed doesn't have: it turns sites that don't display one into feeds, as well as newsletters you receive via email (import .eml files, even entire folders). Each article can be summarized by AI, and the full text can be retrieved or manually rewritten when the source publishes only the preview. Rust + SQLite backend: one binary, no account, no cloud - unlike Feedly and Inoreader, your feeds and data remain on your own machine.
 
 <p align="center">
-  <img src="Screenshots/Screenshot_2.gif" alt="MeigRSS">
+  <img src="https://giuliomagini.com/images/gifs/MeigRSS_screenshot_2.gif" alt="MeigRSS">
 </p>
 
 You can find all the functionality explanation [in this video](https://www.youtube.com/watch?v=J4hxeypqo68).
@@ -60,8 +60,6 @@ You can find all the functionality explanation [in this video](https://www.youtu
 **AI API tested with:** Mistral (Small and Large). Other providers (OpenAI, Claude, Gemini) use standard API formats and should work without issues, but have not been explicitly tested.
 
 **Web Feed API tested with:** Scrape.do. Other providers (ScraperAPI, ScrapingBee, Scrapfly, ZenRows) use the same API + URL formats and should work without issues, but have not been explicitly tested.
-
-**Last updated:** August 2026
 
 ---
 
