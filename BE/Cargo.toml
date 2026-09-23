@@ -1,6 +1,6 @@
 [package]
 name = "meigrss"
-version = "3.1.0"
+version = "3.2.0"
 edition = "2024"
 description = "MeigRSS - Your personal news feed aggregator with AI summaries"
 authors = ["Giulio Magini"]
@@ -22,7 +22,7 @@ tower-http = { version = "0.7", features = ["cors", "set-header"] }
 feed-rs = "2.4"
 
 # XML parsing for OPML import
-quick-xml = "0.41"
+quick-xml = "0.42"
 
 # HTTP client for fetching feeds and articles.
 # gzip/brotli enable transparent response decompression. reqwest sets the
@@ -51,7 +51,9 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Encryption for API key storage
 aes-gcm = "0.11"
-base64 = "0.22"
+# SIMD engines are left out: payloads are a few dozen bytes, so they bring no
+# measurable gain and would only add unsafe code to the crypto path
+base64 = { version = "0.23", default-features = false, features = ["std"] }
 
 # Logging
 tracing = "0.1"

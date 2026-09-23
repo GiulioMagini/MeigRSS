@@ -46,7 +46,8 @@ fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) 
             4. Non esprimere opinioni, valutazioni o interpretazioni. Riporta solo ciò che l'articolo afferma.\n\
             5. Se l'articolo contiene affermazioni attribuite a qualcuno, mantieni l'attribuzione (es. \"secondo X\", \"X ha dichiarato che\").\n\
             6. Rispondi sempre in italiano, indipendentemente dalla lingua dell'articolo.\n\n\
-            Formato di output: Solo il testo del riassunto, senza titoli, etichette o preamboli.",
+            Formato di output: Solo il testo del riassunto, senza titoli, etichette o preamboli.
+            Evita qualsiasi tipo di formattazione (ad esempio Markdown).",
             article_text = article_text, sentences = sentences, max_chars = max_chars,
         ),
         "fr" => format!(
@@ -59,7 +60,8 @@ fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) 
             4. N'exprime aucune opinion, évaluation ou interprétation. Rapporte uniquement ce que l'article affirme.\n\
             5. Si l'article contient des propos attribués à quelqu'un, conserve l'attribution (par ex. \"selon X\", \"X a déclaré que\").\n\
             6. Réponds toujours en français, quelle que soit la langue de l'article.\n\n\
-            Format de sortie : uniquement le texte du résumé, sans titres, étiquettes ni préambules.",
+            Format de sortie : uniquement le texte du résumé, sans titres, étiquettes ni préambules.
+            Évitez tout type de mise en forme (par exemple, Markdown).",
             article_text = article_text, sentences = sentences, max_chars = max_chars,
         ),
         "de" => format!(
@@ -72,7 +74,8 @@ fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) 
             4. Äußere keine Meinungen, Bewertungen oder Interpretationen. Gib nur wieder, was der Artikel aussagt.\n\
             5. Wenn der Artikel jemandem zugeschriebene Aussagen enthält, behalte die Zuordnung bei (z. B. \"laut X\", \"X erklärte, dass\").\n\
             6. Antworte immer auf Deutsch, unabhängig von der Sprache des Artikels.\n\n\
-            Ausgabeformat: Nur der Text der Zusammenfassung, ohne Titel, Beschriftungen oder Einleitungen.",
+            Ausgabeformat: Nur der Text der Zusammenfassung, ohne Titel, Beschriftungen oder Einleitungen.
+            Vermeiden Sie jegliche Art von Formatierung (z. B. Markdown).",
             article_text = article_text, sentences = sentences, max_chars = max_chars,
         ),
         "es" => format!(
@@ -85,7 +88,8 @@ fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) 
             4. No expreses opiniones, valoraciones o interpretaciones. Recoge solo lo que el artículo afirma.\n\
             5. Si el artículo contiene afirmaciones atribuidas a alguien, mantén la atribución (p. ej. \"según X\", \"X declaró que\").\n\
             6. Responde siempre en español, independientemente del idioma del artículo.\n\n\
-            Formato de salida: Solo el texto del resumen, sin títulos, etiquetas ni preámbulos.",
+            Formato de salida: Solo el texto del resumen, sin títulos, etiquetas ni preámbulos.
+            Evite cualquier tipo de formato (por ejemplo, Markdown).",
             article_text = article_text, sentences = sentences, max_chars = max_chars,
         ),
         "pt" => format!(
@@ -98,7 +102,8 @@ fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) 
             4. Não exprimas opiniões, avaliações ou interpretações. Reporta apenas o que o artigo afirma.\n\
             5. Se o artigo contiver afirmações atribuídas a alguém, mantém a atribuição (por ex. \"segundo X\", \"X declarou que\").\n\
             6. Responde sempre em português, independentemente da língua do artigo.\n\n\
-            Formato de saída: Apenas o texto do resumo, sem títulos, etiquetas ou preâmbulos.",
+            Formato de saída: Apenas o texto do resumo, sem títulos, etiquetas ou preâmbulos.
+            Evite qualquer tipo de formatação (por exemplo, Markdown).",
             article_text = article_text, sentences = sentences, max_chars = max_chars,
         ),
         _ => format!(
@@ -111,7 +116,8 @@ fn build_summary_prompt(article_text: &str, provider: &LlmProvider, lang: &str) 
             4. Do not express opinions, evaluations or interpretations. Report only what the article states.\n\
             5. If the article contains statements attributed to someone, keep the attribution (e.g. \"according to X\", \"X stated that\").\n\
             6. Always reply in English, regardless of the article's language.\n\n\
-            Output format: Only the summary text, without titles, labels or preambles.",
+            Output format: Only the summary text, without titles, labels or preambles.
+            Avoid any type of formatting (e.g., Markdown).",
             article_text = article_text, sentences = sentences, max_chars = max_chars,
         ),
     }
@@ -336,8 +342,9 @@ impl LlmClient {
     }
 
     /// Calls the OpenAI Responses API (the current OpenAI generation endpoint).
-    /// GPT-5.x models are reasoning models: reasoning tokens count against
-    /// max_output_tokens, so extra headroom is required beyond the summary length.
+    /// GPT-6 models are reasoning models, but reasoning is disabled here: a short
+    /// factual summary gains nothing from it, and without reasoning tokens the
+    /// output budget only has to cover the summary itself.
     async fn call_openai(
         &self,
         api_key: &str,
@@ -346,10 +353,10 @@ impl LlmClient {
         let request = OpenAiResponsesRequest {
             model: LlmProvider::OpenAI.default_model().to_string(),
             input: prompt.to_string(),
-            max_output_tokens: 2000, // Headroom for reasoning tokens + up to 1000 chars of summary
+            max_output_tokens: 600, // Enough for up to 1000 chars in longer summaries
             reasoning: OpenAiReasoning {
-                // A short factual summary does not need deep reasoning
-                effort: "low".to_string(),
+                // Set explicitly, since the model default is "medium"
+                effort: "none".to_string(),
             },
         };
 

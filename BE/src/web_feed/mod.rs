@@ -83,14 +83,12 @@ pub async fn test_rendering_api(
     provider: &WebRenderingProvider,
     api_key: &str,
 ) -> Result<(), String> {
-    let test_url = provider.test_url(api_key);
-
-    let response = client
-        .get(&test_url)
+    let response = provider
+        .test_request(client, api_key)
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        // without_url() strips the request URL (which contains the API key)
+        // without_url() strips the request URL (which carries the API key for most providers)
         .map_err(|e| format!("API test request failed: {}", e.without_url()))?;
 
     if response.status().is_success() {
@@ -307,15 +305,12 @@ async fn fetch_via_rendering_api(
     api_key: &str,
     page_url: &str,
 ) -> Result<String, String> {
-    let render_url = provider.render_url(api_key, page_url);
-
-    let response = client
-        .get(&render_url)
+    let response = provider
+        .render_request(client, api_key, page_url)
         .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
-        // without_url() strips the request URL (which contains the API key)
-        // from the error message before it reaches logs or the frontend
+        // without_url() strips the request URL (which carries the API key for most providers)
         .map_err(|e| format!("Rendering API request failed: {}", e.without_url()))?;
 
     let status = response.status();

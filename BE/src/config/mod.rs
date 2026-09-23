@@ -1,4 +1,5 @@
 pub mod encryption;
+use reqwest::{Client, RequestBuilder};
 
 /// Supported LLM API providers.
 /// Each provider has its own endpoint URL and authentication format.
@@ -47,7 +48,7 @@ impl LlmProvider {
                 "https://api.mistral.ai/v1/chat/completions".to_string()
             }
             // OpenAI Responses API: the current-generation endpoint, successor of
-            // Chat Completions (which is now considered a legacy path for GPT-5.x models)
+            // Chat Completions, used here for every OpenAI model
             Self::OpenAI => "https://api.openai.com/v1/responses".to_string(),
             Self::Claude => "https://api.anthropic.com/v1/messages".to_string(),
             Self::Gemini => format!(
@@ -67,10 +68,9 @@ impl LlmProvider {
             Self::Mistral500Chars => "ministral-8b-latest",
             // Ministral 3 14B: top tier of the same family, used for longer summaries
             Self::Mistral1000Chars => "ministral-14b-latest",
-            // GPT-5.6 Luna: OpenAI's cost-optimized tier for high-volume workloads,
-            // the coherent choice for short summaries ($0.20/$1.20 per MTok after the
-            // July 2026 price cut). GPT-6 Astra has no low-cost variant.
-            Self::OpenAI => "gpt-5.6-luna",
+            // GPT-6 Luna: lowest-cost tier of the GPT-6 family, built for focused
+            // high-volume tasks such as short summaries ($0.10/$0.50 per MTok at launch)
+            Self::OpenAI => "gpt-6-luna",
             // Fastest and most cost-effective Claude tier, ideal for simple summaries
             Self::Claude => "claude-haiku-4-5",
             // Choose to pass to the most recent Flash Lite version
@@ -140,44 +140,65 @@ impl WebRenderingProvider {
         }
     }
 
-    /// Builds the full rendering API URL for the given target page URL.
-    /// Each provider uses different query parameter names for the API key,
-    /// target URL, and JS rendering toggle.
-    pub fn render_url(&self, api_key: &str, target_url: &str) -> String {
+    /// Builds the request that fetches the target page through the rendering API.
+    /// Each provider uses different parameter names for the API key, target URL
+    /// and JS rendering toggle. The key travels as a query parameter, except for
+    /// ScrapingBee, which has deprecated that form in favor of a Bearer token.
+    pub fn render_request(&self, client: &Client, api_key: &str, target_url: &str) -> RequestBuilder {
         let encoded_url = urlencoded(target_url);
         match self {
-            Self::ScrapeDo => format!(
+            Self::ScrapeDo => client.get(format!(
                 "https://api.scrape.do/?token={}&render=true&url={}",
                 urlencoded(api_key), encoded_url
-            ),
-            Self::ScraperApi => format!(
+            )),
+            Self::ScraperApi => client.get(format!(
                 "https://api.scraperapi.com?api_key={}&render=true&url={}",
                 urlencoded(api_key), encoded_url
-            ),
-            Self::ScrapingBee => format!(
-                "https://app.scrapingbee.com/api/v1/?api_key={}&render_js=true&url={}",
+            )),
+            Self::ScrapingBee => client
+                .get(format!(
+                    "https://app.scrapingbee.com/api/v1?render_js=true&url={}",
+                    encoded_url
+                ))
+                .bearer_auth(api_key),
+            // proxified_response returns the page itself: without it Scrapfly
+            // wraps the HTML in a JSON envelope under result.content
+            Self::Scrapfly => client.get(format!(
+                "https://api.scrapfly.io/scrape?key={}&render_js=true&proxified_response=true&url={}",
                 urlencoded(api_key), encoded_url
-            ),
-            Self::Scrapfly => format!(
-                "https://api.scrapfly.io/scrape?key={}&render_js=true&url={}",
-                urlencoded(api_key), encoded_url
-            ),
-            Self::ZenRows => format!(
+            )),
+            Self::ZenRows => client.get(format!(
                 "https://api.zenrows.com/v1/?apikey={}&js_render=true&url={}",
                 urlencoded(api_key), encoded_url
-            ),
+            )),
         }
     }
 
-    /// Builds the test URL used to validate the API key.
-    /// ScraperAPI has a free account endpoint; others test by scraping example.com.
-    pub fn test_url(&self, api_key: &str) -> String {
+    /// Builds the request used to validate the API key.
+    /// Every provider exposes a free account/usage endpoint, so the check
+    /// costs no credits, unlike a rendered test scrape.
+    pub fn test_request(&self, client: &Client, api_key: &str) -> RequestBuilder {
         match self {
-            Self::ScraperApi => format!(
+            // Capped at 10 calls per minute, far above what a key test needs
+            Self::ScrapeDo => client.get(format!(
+                "https://api.scrape.do/info?token={}",
+                urlencoded(api_key)
+            )),
+            Self::ScraperApi => client.get(format!(
                 "https://api.scraperapi.com/account?api_key={}",
                 urlencoded(api_key)
-            ),
-            _ => self.render_url(api_key, "https://example.com"),
+            )),
+            Self::ScrapingBee => client
+                .get("https://app.scrapingbee.com/api/v1/usage")
+                .bearer_auth(api_key),
+            Self::Scrapfly => client.get(format!(
+                "https://api.scrapfly.io/account?key={}",
+                urlencoded(api_key)
+            )),
+            // This endpoint accepts the key only as a header, not as a query parameter
+            Self::ZenRows => client
+                .get("https://api.zenrows.com/v1/subscriptions/self/details")
+                .header("X-API-Key", api_key),
         }
     }
 }

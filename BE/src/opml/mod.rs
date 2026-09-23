@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use quick_xml::events::{BytesStart, Event};
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 
 use crate::db::{CategoryExport, FeedExport, FullExport};
 
@@ -285,18 +285,19 @@ fn register_category(categories: &mut Vec<CategoryExport>, name: &str) {
 fn collect_attributes(e: &BytesStart) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for attr in e.attributes().flatten() {
-        let raw_key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+        let raw_key: &str = attr.key.as_ref();
         let key = raw_key
             .rsplit(':')
             .next()
-            .unwrap_or(raw_key.as_str())
+            .unwrap_or(raw_key)
             .to_ascii_lowercase();
 
-        let raw_value = String::from_utf8_lossy(&attr.value).to_string();
-        let value = match quick_xml::escape::unescape(&raw_value) {
-            Ok(decoded) => decoded.to_string(),
+        // OPML is XML 1.0: entities are resolved and whitespace normalized as
+        // the specification requires for attribute values
+        let value = match attr.normalized_value(XmlVersion::Implicit1_0) {
+            Ok(normalized) => normalized.into_owned(),
             // Malformed entities: keep the raw text rather than dropping the feed
-            Err(_) => raw_value,
+            Err(_) => attr.value.into_owned(),
         };
 
         map.insert(key, value);
@@ -305,11 +306,10 @@ fn collect_attributes(e: &BytesStart) -> HashMap<String, String> {
 }
 
 /// Returns an element's local name in lowercase, ignoring any namespace prefix.
-fn local_name(raw: &[u8]) -> String {
-    let name = String::from_utf8_lossy(raw);
-    name.rsplit(':')
+fn local_name(raw: &str) -> String {
+    raw.rsplit(':')
         .next()
-        .unwrap_or(name.as_ref())
+        .unwrap_or(raw)
         .to_ascii_lowercase()
 }
 
