@@ -721,7 +721,7 @@ async fn get_api_config(
 ) -> Json<ApiResponse<ApiConfigResponse>> {
     match state.db.get_api_config() {
         Ok(Some((provider, encrypted_key, iv))) => {
-            let llm_provider = LlmProvider::from_str(&provider).unwrap_or(LlmProvider::Mistral500Chars);
+            let llm_provider = LlmProvider::from_str(&provider).unwrap_or(LlmProvider::Mistral1000Chars);
             let not_configured_label = if crate::is_system_italian() { "Non configurata" } else { "Not configured" };
             let key_display = if encrypted_key.is_empty() {
                 not_configured_label.to_string()
@@ -740,14 +740,14 @@ async fn get_api_config(
             })
         }
         Ok(None) => ApiResponse::ok(ApiConfigResponse {
-            provider: "mistral_500_chars".to_string(),
+            provider: "mistral_1000_chars".to_string(),
             key_status: if crate::is_system_italian() { "Non configurata".to_string() } else { "Not configured".to_string() },
             supports_usage_query: true,
         }),
         Err(e) => {
             tracing::error!("Failed to get API config: {}", e);
             ApiResponse::ok(ApiConfigResponse {
-                provider: "mistral_500_chars".to_string(),
+                provider: "mistral_1000_chars".to_string(),
                 key_status: if crate::is_system_italian() { "Non configurata".to_string() } else { "Not configured".to_string() },
                 supports_usage_query: true,
             })

@@ -192,55 +192,87 @@ struct OpenAiOutputContent {
     text: String,
 }
 
-/// Claude API request format (differs from OpenAI format).
+/// Claude Messages API request format (differs from OpenAI format).
 #[derive(Serialize)]
 struct ClaudeRequest {
     model: String,
     max_tokens: u32,
     messages: Vec<ChatMessage>,
+    thinking: ClaudeThinking,
+    output_config: ClaudeOutputConfig,
 }
 
-/// Claude API response format.
+/// Thinking mode of the request. Claude 5.5 models think adaptively by
+/// default, so it has to be disabled explicitly.
+#[derive(Serialize)]
+struct ClaudeThinking {
+    #[serde(rename = "type")]
+    thinking_type: String,
+}
+
+/// Output settings of the request: effort governs every output token,
+/// with or without thinking.
+#[derive(Serialize)]
+struct ClaudeOutputConfig {
+    effort: String,
+}
+
+/// Claude Messages API response format.
+/// Content blocks are selected by type, since a response is not guaranteed
+/// to start with a text block.
 #[derive(Deserialize)]
 struct ClaudeResponse {
+    #[serde(default)]
     content: Vec<ClaudeContent>,
+    #[serde(default)]
+    stop_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ClaudeContent {
+    #[serde(rename = "type")]
+    content_type: String,
+    #[serde(default)]
     text: String,
 }
 
-/// Gemini API request format.
+/// Gemini Interactions API request format.
 #[derive(Serialize)]
-struct GeminiRequest {
-    contents: Vec<GeminiContent>,
+struct GeminiInteractionRequest {
+    model: String,
+    input: String,
+    store: bool,
+    generation_config: GeminiGenerationConfig,
 }
 
 #[derive(Serialize)]
-struct GeminiContent {
-    parts: Vec<GeminiPart>,
+struct GeminiGenerationConfig {
+    max_output_tokens: u32,
+    thinking_level: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct GeminiPart {
+/// Gemini Interactions API response format.
+/// The steps array can contain thought steps before the model output step.
+#[derive(Deserialize)]
+struct GeminiInteractionResponse {
+    #[serde(default)]
+    steps: Vec<GeminiStep>,
+}
+
+#[derive(Deserialize)]
+struct GeminiStep {
+    #[serde(rename = "type")]
+    step_type: String,
+    #[serde(default)]
+    content: Vec<GeminiStepContent>,
+}
+
+#[derive(Deserialize)]
+struct GeminiStepContent {
+    #[serde(rename = "type")]
+    content_type: String,
+    #[serde(default)]
     text: String,
-}
-
-/// Gemini API response format.
-#[derive(Deserialize)]
-struct GeminiResponse {
-    candidates: Vec<GeminiCandidate>,
-}
-
-#[derive(Deserialize)]
-struct GeminiCandidate {
-    content: GeminiResponseContent,
-}
-
-#[derive(Deserialize)]
-struct GeminiResponseContent {
-    parts: Vec<GeminiPart>,
 }
 
 // ─── LLM client ────────────────────────────────────────────────────────────
@@ -390,7 +422,9 @@ impl LlmClient {
             .ok_or("OpenAI returned empty response".to_string())
     }
 
-    /// Calls the Anthropic Claude API.
+    /// Calls the Anthropic Claude Messages API.
+    /// Thinking is disabled and effort set to low: a short factual summary gains
+    /// nothing from reasoning, and thinking tokens would count against `max_tokens`.
     async fn call_claude(
         &self,
         api_key: &str,
@@ -403,6 +437,13 @@ impl LlmClient {
                 role: "user".to_string(),
                 content: prompt.to_string(),
             }],
+            thinking: ClaudeThinking {
+                thinking_type: "disabled".to_string(),
+            },
+            output_config: ClaudeOutputConfig {
+                // Haiku 5.5 accepts disabled thinking only at effort "high" or below
+                effort: "low".to_string(),
+            },
         };
 
         let response = self.http_client
@@ -426,24 +467,44 @@ impl LlmClient {
             .await
             .map_err(|e| format!("Failed to parse Claude response: {}", e))?;
 
-        body.content
-            .first()
-            .map(|c| c.text.trim().to_string())
-            .ok_or("Claude returned empty response".to_string())
+        // Haiku 5.5 has no server-side fallback model when its classifiers decline
+        if body.stop_reason.as_deref() == Some("refusal") {
+            return Err("Claude declined to process the request".to_string());
+        }
+
+        // Concatenate the text blocks, skipping any other block type
+        let text: String = body.content
+            .iter()
+            .filter(|c| c.content_type == "text")
+            .map(|c| c.text.as_str())
+            .collect();
+
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("Claude returned empty response".to_string());
+        }
+        Ok(text.to_string())
     }
 
-    /// Calls the Google Gemini API.
+    /// Calls the Google Gemini Interactions API.
+    /// Interactions are not stored server-side (`store: false`): MeigRSS sends
+    /// stateless one-shot requests, so there is no reason to keep article text
+    /// on Google's side (55 days on paid tier, 1 day on free tier by default).
     async fn call_gemini(
         &self,
         api_key: &str,
         prompt: &str,
     ) -> Result<String, String> {
-        let request = GeminiRequest {
-            contents: vec![GeminiContent {
-                parts: vec![GeminiPart {
-                    text: prompt.to_string(),
-                }],
-            }],
+        let request = GeminiInteractionRequest {
+            model: LlmProvider::Gemini.default_model().to_string(),
+            input: prompt.to_string(),
+            store: false,
+            generation_config: GeminiGenerationConfig {
+                max_output_tokens: 600, // Enough for up to 1000 chars in longer summaries
+                // Set explicitly to the lowest level, which keeps thinking
+                // (billed as output tokens) to little or nothing
+                thinking_level: "minimal".to_string(),
+            },
         };
 
         // Send the API key via header instead of URL query parameter,
@@ -463,16 +524,25 @@ impl LlmClient {
             return Err(format!("Gemini API returned {}: {}", status, error_body));
         }
 
-        let body: GeminiResponse = response
+        let body: GeminiInteractionResponse = response
             .json()
             .await
             .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
 
-        body.candidates
-            .first()
-            .and_then(|c| c.content.parts.first())
-            .map(|p| p.text.trim().to_string())
-            .ok_or("Gemini returned empty response".to_string())
+        // Skip thought steps and concatenate the text of the model output steps
+        let text: String = body.steps
+            .iter()
+            .filter(|step| step.step_type == "model_output")
+            .flat_map(|step| step.content.iter())
+            .filter(|c| c.content_type == "text")
+            .map(|c| c.text.as_str())
+            .collect();
+
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("Gemini returned empty response".to_string());
+        }
+        Ok(text.to_string())
     }
 
     /// Tests the API connection by sending a simple request.

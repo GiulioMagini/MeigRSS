@@ -12,6 +12,8 @@ use crate::config::encryption;
 use crate::config::WebRenderingProvider;
 use crate::db::{Article, Database, Feed};
 
+use crate::feed::is_unreachable;
+
 /// Result of scanning a single web feed page during refresh.
 #[derive(Debug)]
 pub struct WebFeedRefreshResult {
@@ -21,6 +23,27 @@ pub struct WebFeedRefreshResult {
     pub articles_new: usize,
     pub error: Option<String>,
     pub auto_paused: bool,
+}
+
+/// Error raised while scanning a web page. Converts into its message, which is
+/// all the callers outside the refresh need.
+pub struct ScanError {
+    message: String,
+    /// True when the page or the rendering API could not be reached at all
+    /// (timeout or failed connection): the refresh auto-pauses the feed.
+    unreachable: bool,
+}
+
+impl From<String> for ScanError {
+    fn from(message: String) -> Self {
+        Self { message, unreachable: false }
+    }
+}
+
+impl From<ScanError> for String {
+    fn from(error: ScanError) -> Self {
+        error.message
+    }
 }
 
 /// Extracted link from a web page scan.
@@ -37,13 +60,13 @@ pub struct ExtractedLink {
 /// date-based URL pattern. When `rendering` is Some the page goes through the
 /// rendering API, which executes its JavaScript; when None it is fetched with
 /// a plain GET, which is free but only sees server-rendered content.
-/// Returns the list of extracted links or an error message.
+/// Returns the list of extracted links or a `ScanError`.
 pub async fn scan_web_page(
     client: &Client,
     rendering: Option<(&WebRenderingProvider, &str)>,
     page_url: &str,
     pattern: &str,
-) -> Result<Vec<ExtractedLink>, String> {
+) -> Result<Vec<ExtractedLink>, ScanError> {
     // Parsed once and reused to resolve relative hrefs found on the page
     // (many sites link articles with root-relative "/x" or protocol-relative
     // "//x" paths instead of fully-qualified URLs).
@@ -145,11 +168,9 @@ async fn refresh_single_web_feed(
     let links = match scan_web_page(client, rendering, &feed.url, &feed.web_feed_pattern).await {
         Ok(l) => l,
         Err(e) => {
-            tracing::warn!("Web feed '{}' scan failed: {}", feed.site_name, e);
-
-            let is_timeout = e.contains("timed out") || e.contains("timeout")
-                || e.contains("connect") || e.contains("Connection");
-            if is_timeout {
+            tracing::warn!("Web feed '{}' scan failed: {}", feed.site_name, e.message);
+            
+            if e.unreachable {
                 if let Err(pause_err) = db.set_feed_paused(feed.id, true) {
                     tracing::error!("Failed to auto-pause web feed {}: {}", feed.id, pause_err);
                 } else {
@@ -166,8 +187,8 @@ async fn refresh_single_web_feed(
                 feed_name: feed.site_name.clone(),
                 articles_found: 0,
                 articles_new: 0,
-                error: Some(e),
-                auto_paused: is_timeout,
+                error: Some(e.message),
+                auto_paused: e.unreachable,
             };
         }
     };
@@ -304,48 +325,61 @@ async fn fetch_via_rendering_api(
     provider: &WebRenderingProvider,
     api_key: &str,
     page_url: &str,
-) -> Result<String, String> {
+) -> Result<String, ScanError> {
     let response = provider
         .render_request(client, api_key, page_url)
         .timeout(std::time::Duration::from_secs(60))
         .send()
         .await
-        // without_url() strips the request URL (which carries the API key for most providers)
-        .map_err(|e| format!("Rendering API request failed: {}", e.without_url()))?;
+        .map_err(|e| ScanError {
+            // Read before without_url(), which consumes the error
+            unreachable: is_unreachable(&e),
+            // without_url() strips the request URL (which carries the API key for most providers)
+            message: format!("Rendering API request failed: {}", e.without_url()),
+        })?;
 
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Rendering API returned {}: {}", status, body));
+        return Err(format!("Rendering API returned {}: {}", status, body).into());
     }
 
     response
         .text()
         .await
-        .map_err(|e| format!("Failed to read rendered HTML: {}", e))
+        .map_err(|e| ScanError {
+            unreachable: is_unreachable(&e),
+            message: format!("Failed to read rendered HTML: {}", e),
+        })
 }
 
 /// Fetches a page with a plain GET, without executing JavaScript.
 /// Costs nothing and works on server-rendered sites, but returns only the
 /// initial HTML: pages that build their article list client-side yield no links.
-async fn fetch_direct(client: &Client, page_url: &str) -> Result<String, String> {
+async fn fetch_direct(client: &Client, page_url: &str) -> Result<String, ScanError> {
     let response = client
         .get(page_url)
         .header(reqwest::header::USER_AGENT, DIRECT_USER_AGENT)
         .timeout(std::time::Duration::from_secs(30))
         .send()
         .await
-        .map_err(|e| format!("Page request failed: {}", e))?;
+        .map_err(|e| ScanError {
+            unreachable: is_unreachable(&e),
+            message: format!("Page request failed: {}", e),
+        })?;
 
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("Page returned {}", status));
+        return Err(format!("Page returned {}", status).into());
     }
 
     response
         .text()
         .await
-        .map_err(|e| format!("Failed to read page HTML: {}", e))
+        .map_err(|e| ScanError {
+            unreachable: is_unreachable(&e),
+            message: format!("Failed to read page HTML: {}", e),
+        })
 }
 
 /// Extracts the base domain from a URL to build the date-based pattern.

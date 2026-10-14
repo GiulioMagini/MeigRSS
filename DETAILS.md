@@ -313,17 +313,17 @@ MeigRSS supports four AI providers for summary generation:
 
 | Provider | Model | Free plan |
 |---|---|---|
-| **Mistral 500 chars** (default) | Ministral 3 8B | Yes (Free mode) |
-| **Mistral 1000 chars** | Ministral 3 14B | Yes (Free mode) |
-| OpenAI | gpt-5.6-luna | No |
-| Claude | claude-haiku-4-5 | No |
+| **Mistral 500 chars** | Ministral 3 8B | Yes (Free mode) |
+| **Mistral 1000 chars** (default) | Ministral 3 14B | Yes (Free mode) |
+| OpenAI | gpt-6-luna | No |
+| Claude | claude-haiku-5-5 | No |
 | Gemini | gemini-3.5-flash-lite | Yes (with limits) |
 
 The summary prompt adapts to the UI language and to the model: Mistral 500 chars generates shorter summaries (3-5 sentences, 500 chars) while other models generate longer ones (3-10 sentences, 1000 chars).
 
 ### Creating a free Mistral account
 
-Mistral offers a free plan with limits, including Small and Large. Check their site for more information.
+Mistral offers a free plan with limits. Check their site for more information.
 
 1. Go to [console.mistral.ai](https://console.mistral.ai) and create an account
 2. In the **Subscription** section, click **Experiment for free**

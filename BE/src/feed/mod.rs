@@ -52,6 +52,8 @@ enum PauseReason {
     /// `429`: polled too often, with the `Retry-After` delay in seconds when
     /// the server provided one.
     TooManyRequests(Option<u64>),
+    /// Timeout or failed connection: the server could not be reached at all.
+    Unreachable,
 }
 
 /// What the server answered to a conditional GET.
@@ -66,7 +68,7 @@ enum FeedOutcome {
     },
     /// `304`: nothing changed, and the stored validators stay as they are.
     NotModified,
-    /// `410` / `429` / Timeout: the feed gets paused.
+    /// `410` / `429` / timeout or failed connection: the feed gets paused.
     Paused(PauseReason),
 }
 
@@ -306,6 +308,13 @@ fn header_string(
     response.headers().get(name)?.to_str().ok().map(str::to_string)
 }
 
+/// Whether a request error means the server could not be reached at all
+/// (timeout or failed connection), which auto-pauses the feed. Checked on the
+/// error kind, since reqwest's message never names the cause.
+pub(crate) fn is_unreachable(error: &reqwest::Error) -> bool {
+    error.is_timeout() || error.is_connect()
+}
+
 /// Parses `Retry-After`, allowed in two forms: a delta in seconds (`3600`) or
 /// an HTTP-date (`Wed, 29 Jul 2026 14:00:00 GMT`), from which the delta is
 /// computed. Dates already in the past collapse to zero.
@@ -405,8 +414,18 @@ async fn fetch_single_feed(
         .and_then(|mut map| map.remove(&tracker_key))
         .and_then(|track| track.candidate);
 
-    let response = response
-        .map_err(|e| format!("HTTP request failed for {}: {}", feed.url, e))?;
+    // An unreachable server is reported as an outcome rather than an error,
+    // because the feed gets paused exactly as for a 410 or a 429
+    let response = match response {
+        Ok(response) => response,
+        Err(e) if is_unreachable(&e) => {
+            return Ok(FeedResponse {
+                outcome: FeedOutcome::Paused(PauseReason::Unreachable),
+                canonical_url: None,
+            });
+        }
+        Err(e) => return Err(format!("HTTP request failed for {}: {}", feed.url, e)),
+    };
 
     let status = response.status();
 
@@ -449,10 +468,20 @@ async fn fetch_single_feed(
     let etag = header_string(&response, reqwest::header::ETAG);
     let last_modified = header_string(&response, reqwest::header::LAST_MODIFIED);
 
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response body from {}: {}", feed.url, e))?;
+    // The timeout covers the body too: a server too slow to send it is
+    // treated like one that never answered
+    let body = match response.bytes().await {
+        Ok(body) => body,
+        Err(e) if is_unreachable(&e) => {
+            return Ok(FeedResponse {
+                outcome: FeedOutcome::Paused(PauseReason::Unreachable),
+                canonical_url: None,
+            });
+        }
+        Err(e) => {
+            return Err(format!("Failed to read response body from {}: {}", feed.url, e));
+        }
+    };
 
     // Some feeds declare a non-UTF-8 encoding in the XML header (e.g. ISO-8859-15)
     // but the HTTP server serves them as UTF-8, causing mojibake.
@@ -509,11 +538,14 @@ fn parse_articles(
             .map(|t| strip_html_and_decode(&t.content))
             .unwrap_or_default();
 
-        // Strip HTML tags from author name and decode HTML entities
+        // Strip HTML tags from the first author name and decode HTML entities.
+        // Since feed-rs 3 a person may have no name (e.g. only an email), so the
+        // first author that actually has one is taken
         let author = entry
             .authors
-            .first()
-            .map(|a| strip_html_and_decode(&a.name))
+            .iter()
+            .find_map(|a| a.name.as_deref())
+            .map(strip_html_and_decode)
             .unwrap_or_default();
 
         // Extract publication date
@@ -914,6 +946,20 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                         }
                         ("pause_reason_gone", None)
                     }
+                    PauseReason::Unreachable => {
+                        if italian {
+                            tracing::warn!(
+                                "Feed '{}': irraggiungibile (timeout o connessione fallita), messo in pausa. Per sbloccarlo, vai nella pagina dei feed.",
+                                feed.site_name
+                            );
+                        } else {
+                            tracing::warn!(
+                                "Feed '{}': unreachable (timeout or failed connection), feed is paused. To unlock it, go to the feed page.",
+                                feed.site_name
+                            );
+                        }
+                        ("pause_reason_timeout", None)
+                    }
                     PauseReason::TooManyRequests(retry_after) => {
                         match retry_after.map(|s| format_retry_delay(s, italian)) {
                             Some(wait) if italian => tracing::warn!(
@@ -954,20 +1000,9 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                 }
             }
             Err(e) => {
+                // Unreachable servers never get here: they come back as
+                // FeedOutcome::Paused, so every remaining error leaves the feed active
                 tracing::warn!("Failed to fetch feed '{}': {}", feed.url, e);
-
-                // Auto-pause feeds that timeout or fail to connect
-                let is_timeout = e.contains("timed out") || e.contains("timeout")
-                    || e.contains("connect") || e.contains("Connection");
-                if is_timeout {
-                    if let Err(pause_err) = db.set_feed_paused(feed.id, true) {
-                        tracing::error!("Failed to auto-pause feed {}: {}", feed.id, pause_err);
-                    } else if italian {
-                        tracing::info!("Feed '{}' messo in pausa automaticamente per errore di connessione", feed.site_name);
-                    } else {
-                        tracing::info!("Feed '{}' auto-paused due to connection error", feed.site_name);
-                    }
-                }
 
                 FetchResult {
                     feed_id: feed.id,
@@ -975,7 +1010,7 @@ pub async fn fetch_all_feeds(db: &Database) -> Vec<FetchResult> {
                     articles_found: 0,
                     articles_new: 0,
                     error: Some(e),
-                    pause_reason: is_timeout.then_some("pause_reason_timeout"),
+                    pause_reason: None,
                     retry_after_seconds: None,
                 }
             }

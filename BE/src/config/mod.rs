@@ -40,21 +40,21 @@ impl LlmProvider {
     }
 
     /// Returns the text generation endpoint URL for the provider.
-    /// Gemini encodes the model name in the URL path, so the endpoint is built
-    /// from `default_model()` to keep a single source of truth for the model.
-    pub fn chat_endpoint(&self) -> String {
+    /// Every provider takes the model name in the request body, so the
+    /// endpoint is a fixed URL and `default_model()` stays the single source
+    /// of truth for the model.
+    pub fn chat_endpoint(&self) -> &'static str {
         match self {
             Self::Mistral500Chars | Self::Mistral1000Chars => {
-                "https://api.mistral.ai/v1/chat/completions".to_string()
+                "https://api.mistral.ai/v1/chat/completions"
             }
             // OpenAI Responses API: the current-generation endpoint, successor of
             // Chat Completions, used here for every OpenAI model
-            Self::OpenAI => "https://api.openai.com/v1/responses".to_string(),
-            Self::Claude => "https://api.anthropic.com/v1/messages".to_string(),
-            Self::Gemini => format!(
-                "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
-                self.default_model()
-            ),
+            Self::OpenAI => "https://api.openai.com/v1/responses",
+            Self::Claude => "https://api.anthropic.com/v1/messages",
+            // Gemini Interactions API: GA since June 2026 and recommended for new
+            // projects, it supersedes the legacy generateContent endpoint
+            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/interactions",
         }
     }
 
@@ -71,9 +71,10 @@ impl LlmProvider {
             // GPT-6 Luna: lowest-cost tier of the GPT-6 family, built for focused
             // high-volume tasks such as short summaries ($0.10/$0.50 per MTok at launch)
             Self::OpenAI => "gpt-6-luna",
-            // Fastest and most cost-effective Claude tier, ideal for simple summaries
-            Self::Claude => "claude-haiku-4-5",
-            // Choose to pass to the most recent Flash Lite version
+            // Claude Haiku 5.5: fastest and lowest-cost Claude tier, ideal for
+            // simple summaries ($0.10/$0.50 per MTok for prompts up to 100K tokens)
+            Self::Claude => "claude-haiku-5-5",
+            // Choose to pass to free Flash Lite version
             Self::Gemini => "gemini-3.5-flash-lite",
         }
     }
