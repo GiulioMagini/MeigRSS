@@ -2,8 +2,8 @@
 <!-- Feed import: upload JSON file to import feeds -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiPost, apiGet, categoryDisplayName } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { apiPost, apiGet, categoryDisplayName } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");
 

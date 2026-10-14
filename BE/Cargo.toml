@@ -1,6 +1,6 @@
 [package]
 name = "meigrss"
-version = "3.2.0"
+version = "3.5.0"
 edition = "2024"
 description = "MeigRSS - Your personal news feed aggregator with AI summaries"
 authors = ["Giulio Magini"]

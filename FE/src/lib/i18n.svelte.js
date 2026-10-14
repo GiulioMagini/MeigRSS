@@ -4,7 +4,7 @@
  * Detects browser language, loads the appropriate translation map,
  * and provides a reactive t() function for all components.
  */
-import { apiGet } from "$lib/api.js";
+import { apiGet } from "#lib/api.js";
 
 // Supported languages (ISO 639-1). The layout language selector renders
 // one option per entry automatically, so adding a code here is enough.

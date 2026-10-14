@@ -2,8 +2,8 @@
 <!-- ArticleCard: Single article in the feed list.
      Expandable: click to show summary, full text, and action buttons. -->
 <script>
-    import { sanitize, stripHtml, apiPost, apiPut, categoryNameDisplay } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { sanitize, stripHtml, apiPost, apiPut, categoryNameDisplay } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     let { article = $bindable(), lastRefreshTimestamp, highlightKeywords, searchQuery, onMarkAsRead, onToggleFavorite, onGenerateSummary } = $props();
 

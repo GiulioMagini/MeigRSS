@@ -2,8 +2,8 @@
 <!-- Categories management: add, rename, delete -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiGet, apiPost, apiPut, apiDelete, sanitize, categoryDisplayName } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { apiGet, apiPost, apiPut, apiDelete, sanitize, categoryDisplayName } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");
 

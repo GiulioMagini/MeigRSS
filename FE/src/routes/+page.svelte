@@ -2,9 +2,9 @@
 <!-- Main page: Article feed list with filters, sorting, pagination -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiGet, apiPost, apiPut, categoryDisplayName } from "$lib/api.js";
-    import { t, getCurrentLang } from "$lib/i18n.svelte.js";
-    import ArticleCard from "$lib/components/ArticleCard.svelte";
+    import { apiGet, apiPost, apiPut, categoryDisplayName } from "#lib/api.js";
+    import { t, getCurrentLang } from "#lib/i18n.svelte.js";
+    import ArticleCard from "#lib/components/ArticleCard.svelte";
 
     const setLoading = getContext("setLoading");
 

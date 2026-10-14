@@ -2,8 +2,8 @@
 <!-- Delete all feeds: confirmation page -->
 <script>
     import { getContext } from "svelte";
-    import { apiDelete } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { apiDelete } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
     import { goto } from "$app/navigation";
 
     const setLoading = getContext("setLoading");

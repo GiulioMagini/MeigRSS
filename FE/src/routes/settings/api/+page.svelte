@@ -2,13 +2,13 @@
 <!-- API Configuration page: provider, API key, test, plan info -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiGet, apiPost, apiDelete, sanitize } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { apiGet, apiPost, apiDelete, sanitize } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");
 
     let savedProvider = $state("");
-    let selectedProvider = $state("mistral_500_chars");
+    let selectedProvider = $state("mistral_1000_chars");
     let apiKey = $state("");
     let keyStatus = $state("");
     let supportsUsage = $state(true);
@@ -169,7 +169,7 @@
             await apiDelete("/api/config/api");
             savedProvider = "";
             keyStatus = "";
-            selectedProvider = "mistral_500_chars";
+            selectedProvider = "mistral_1000_chars";
             apiKey = "";
             testResult = null;
             planInfo = "";

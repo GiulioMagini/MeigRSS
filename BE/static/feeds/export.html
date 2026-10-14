@@ -7,14 +7,17 @@
 		<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 		<link rel="icon" type="image/png" href="/favicon.png" />
 		<title>MeigRSS</title>
-		<link href="../_app/immutable/entry/start.D4bxFPJm.js" rel="modulepreload">
-		<link href="../_app/immutable/chunks/C1mCMXQF.js" rel="modulepreload">
-		<link href="../_app/immutable/chunks/BZiI6GbU.js" rel="modulepreload">
-		<link href="../_app/immutable/entry/app.B7AOIulu.js" rel="modulepreload">
-		<link href="../_app/immutable/chunks/xihTtKlq.js" rel="modulepreload">
-		<link href="../_app/immutable/nodes/0.BrSDBnbj.js" rel="modulepreload">
-		<link href="../_app/immutable/chunks/sH-qBAvW.js" rel="modulepreload">
-		<link href="../_app/immutable/nodes/5.BQcJSYUB.js" rel="modulepreload">
+		<link href="../_app/immutable/entry/start.BRkfkuPq.js" rel="modulepreload">
+		<link href="../_app/immutable/entry/payload.DSmR2FwN.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/CRzLMJPS.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/BxPY9G0i.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/C6bY0pef.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/_HV9Hm98.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/CD2DiQ1A.js" rel="modulepreload">
+		<link href="../_app/immutable/entry/app.DqxUr3VB.js" rel="modulepreload">
+		<link href="../_app/immutable/nodes/0.DZegnkrc.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/BtOpzDlJ.js" rel="modulepreload">
+		<link href="../_app/immutable/nodes/5.B6RZ4L0l.js" rel="modulepreload">
 		
 		<link href="../_app/immutable/assets/0.CJgrtd-k.css" rel="stylesheet">
 		<link href="../_app/immutable/assets/5.Cjs1AT6c.css" rel="stylesheet">
@@ -23,16 +26,16 @@
 		<div style="display: contents">
 			<script>
 				{
-					__sveltekit_1wj7vw3 = {
-						base: new URL("..", location).pathname.slice(0, -1)
+					__sveltekit_gcsped = {
+						base: new URL("..", location).pathname.slice(0, -1),
+						version: "1791986233092"
 					};
 
 					const element = document.currentScript.parentElement;
 
-					Promise.all([
-						import("../_app/immutable/entry/start.D4bxFPJm.js"),
-						import("../_app/immutable/entry/app.B7AOIulu.js")
-					]).then(([kit, app]) => {
+					import("../_app/immutable/entry/start.BRkfkuPq.js").then(async (kit) => {
+						kit.init(__sveltekit_gcsped);
+						const app = await import("../_app/immutable/entry/app.DqxUr3VB.js");
 						kit.start(app, element);
 					});
 				}

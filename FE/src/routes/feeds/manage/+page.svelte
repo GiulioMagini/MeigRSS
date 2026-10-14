@@ -9,8 +9,8 @@
         apiPut,
         sanitize,
         categoryDisplayName,
-    } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");
 

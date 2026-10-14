@@ -1,14 +1,14 @@
 <!-- @ts-nocheck -->
 <script>
     import { onMount, setContext } from "svelte";
-    import { sanitize, apiPut } from "$lib/api.js";
+    import { sanitize, apiPut } from "#lib/api.js";
     import {
         t,
         init as initI18n,
         setLanguage,
         getCurrentLang,
         SUPPORTED,
-    } from "$lib/i18n.svelte.js";
+    } from "#lib/i18n.svelte.js";
 
     let { children } = $props();
 

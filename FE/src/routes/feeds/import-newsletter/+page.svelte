@@ -2,8 +2,8 @@
 <!-- Newsletter import: upload a single EML file or a whole folder, choose or create a newsletter feed, import as articles -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiPost, apiGet, apiPostForm } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { apiPost, apiGet, apiPostForm } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");
 

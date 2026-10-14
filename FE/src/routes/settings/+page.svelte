@@ -2,8 +2,8 @@
 <!-- Settings page: retention period, auto-update interval -->
 <script>
     import { onMount, getContext } from "svelte";
-    import { apiGet, apiPut } from "$lib/api.js";
-    import { t } from "$lib/i18n.svelte.js";
+    import { apiGet, apiPut } from "#lib/api.js";
+    import { t } from "#lib/i18n.svelte.js";
 
     const setLoading = getContext("setLoading");
 
