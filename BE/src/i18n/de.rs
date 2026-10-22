@@ -13,7 +13,9 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
 
     // Menu bar
     t.insert("menu_feeds", "Feeds");
-    t.insert("menu_categories", "Kategorien");
+    t.insert("menu_organize", "Organisieren");
+    t.insert("menu_feed_categories", "Feed-Kategorien");
+    t.insert("menu_favorite_tags", "Favoriten-Tags");
     t.insert("menu_settings", "Einstellungen");
     t.insert("menu_api_config", "API-Konfiguration");
     t.insert("menu_refresh", "Feeds aktualisieren");
@@ -67,6 +69,27 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("cat_delete_error_has_feeds", "Löschen nicht möglich: Der Kategorie sind noch Feeds zugeordnet");
     t.insert("cat_delete_error_default", "Die Standardkategorie kann nicht gelöscht werden");
     t.insert("cat_name_reserved", "Dieser Name ist für die Standardkategorie reserviert");
+    t.insert("cat_name_exists", "Eine Kategorie mit diesem Namen existiert bereits");
+    t.insert("cat_description", "Kategorien gruppieren Feeds, nicht einzelne Artikel: Jeder Feed gehört zu genau einer Kategorie, die alle seine Artikel übernehmen. Damit kannst du die Artikelliste nach Quelle filtern (zum Beispiel Technik, Wirtschaft, Sport). Um deine Favoriten nach Thema zu ordnen, verwende stattdessen die Favoriten-Tags.");
+
+    // Favorite tags
+    t.insert("tag_description",
+        "Tags ordnen die in deinen Favoriten gespeicherten Artikel nach Thema und gelten nur für diese: Jeder Favorit kann bis zu 3 haben. In der Artikelliste kannst du sie mit \"Nur Favoriten\" nach Tag filtern. Wenn du einen Tag umbenennst, wird er bei allen Artikeln aktualisiert; wenn du ihn löschst, wird er von allen Artikeln entfernt, die ihn verwenden.");
+    t.insert("tag_add", "Tag hinzufügen");
+    t.insert("tag_rename", "Tag umbenennen");
+    t.insert("tag_delete", "Tag löschen");
+    t.insert("tag_name_exists", "Ein Tag mit diesem Namen existiert bereits");
+    t.insert("tag_delete_confirm", "Favoriten mit diesem Tag: {n}. Beim Löschen wird er von allen entfernt. Fortfahren?");
+    t.insert("tag_search_title", "Suche nach Tags");
+    t.insert("tag_select_placeholder", "Tag auswählen");
+    t.insert("tag_limit_hint", "Maximal {n} Tags");
+    t.insert("tag_none_defined", "Keine Tags definiert: Du kannst sie unter Organisieren > Favoriten-Tags erstellen");
+    t.insert("tag_none_assigned", "Keine Tags zugeordnet");
+    t.insert("tag_remove", "Tag entfernen");
+    t.insert("btn_edit_tags", "Tags bearbeiten");
+    t.insert("btn_exit_tags", "Fertig");
+    t.insert("tag_limit_reached", "Dieser Artikel hat bereits die maximale Anzahl an Tags");
+    t.insert("tag_article_not_favorite", "Tags können nur Favoriten zugeordnet werden");
 
     // Feed management
     t.insert("feed_add", "Feed hinzufügen");
@@ -123,7 +146,7 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     // Confirm dialogs
     t.insert("confirm_delete_all_feeds",
         "Bist du sicher? Diese Aktion löscht alle Feeds einschließlich der zugehörigen Artikel, ob favorisiert oder nicht, und ist nicht umkehrbar.");
-    t.insert("delete_categories_too", "Auch alle Kategorien löschen");
+    t.insert("delete_categories_and_tags_too", "Auch Kategorien und Tags löschen");
     t.insert("confirm_yes", "Bestätigen");
     t.insert("confirm_no", "Abbrechen");
 

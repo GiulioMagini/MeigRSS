@@ -1,10 +1,10 @@
-<!-- @ts-nocheck -->
 <!-- Main page: Article feed list with filters, sorting, pagination -->
 <script>
     import { onMount, getContext } from "svelte";
     import { apiGet, apiPost, apiPut, categoryDisplayName } from "#lib/api.js";
     import { t, getCurrentLang } from "#lib/i18n.svelte.js";
     import ArticleCard from "#lib/components/ArticleCard.svelte";
+    import TagPicker from "#lib/components/TagPicker.svelte";
 
     const setLoading = getContext("setLoading");
 
@@ -30,6 +30,11 @@
 
     // Categories for filter dropdown
     let categories = $state([]);
+
+    // Favorite tags: the options of the tag search and of the article tag
+    // editors, plus the tags picked in the tag search
+    let favoriteTags = $state([]);
+    let tagFilter = $state([]);
 
     // For understanding new articles and highlight them
     let lastRefreshTimestamp = $state("");
@@ -87,6 +92,12 @@
             if (favoritesFilter !== "all") params += `&favorites_filter=${favoritesFilter}`;
             if (searchQuery.trim()) params += `&search=${encodeURIComponent(searchQuery.trim())}`;
 
+            // The tag search only exists in the favorites view: a selection
+            // left over from it is kept but never applied to the other views
+            if (favoritesFilter === "only" && tagFilter.length > 0) {
+                params += `&tag_ids=${tagFilter.map(tag => tag.id).join(",")}`;
+            }
+
             const res = await apiGet(`/api/articles${params}`);
             if (res.success) {
                 articles = res.data.articles;
@@ -106,6 +117,27 @@
         } catch (e) {
             console.error("Failed to load categories:", e);
         }
+    }
+
+    // Load favorite tags for the tag search and the article tag editors
+    async function loadFavoriteTags() {
+        try {
+            const res = await apiGet("/api/favorite-tags");
+            if (res.success) favoriteTags = res.data;
+        } catch (e) {
+            console.error("Failed to load favorite tags:", e);
+        }
+    }
+
+    // Add or remove a tag in the tag search, then search again
+    function addTagFilter(tag) {
+        tagFilter = [...tagFilter, tag];
+        applyFilters();
+    }
+
+    function removeTagFilter(tag) {
+        tagFilter = tagFilter.filter(selected => selected.id !== tag.id);
+        applyFilters();
     }
 
     // Load the timestamp for new articles
@@ -185,9 +217,12 @@
             await apiPut(`/api/articles/${articleId}/favorite`, {
                 is_favorite: !currentState
             });
-            // Update local state
+            // Update local state. Removing a favorite also drops its tags,
+            // as the backend does
             articles = articles.map(a =>
-                a.id === articleId ? { ...a, is_favorite: !currentState } : a
+                a.id === articleId
+                    ? { ...a, is_favorite: !currentState, tags: currentState ? [] : a.tags }
+                    : a
             );
         } catch (e) {
             console.error("Failed to toggle favorite:", e);
@@ -248,6 +283,7 @@
         (async () => {
             await loadRefreshTimestamp();
             await loadCategories();
+            await loadFavoriteTags();
             await loadArticles();
 
             // Start polling only if auto-update is enabled
@@ -325,6 +361,17 @@
         </div>
     </div>
 
+    <!-- Tag search: favorites only, since only favorites can have tags -->
+    {#if favoritesFilter === "only"}
+        <div class="tag-search">
+            <span class="tag-search-title">
+                <span class="material-icons">sell</span>
+                {t('tag_search_title')}
+            </span>
+            <TagPicker allTags={favoriteTags} selected={tagFilter} onAdd={addTagFilter} onRemove={removeTagFilter} />
+        </div>
+    {/if}
+
     {#if connectionError}
         <div class="connection-error">
             <span class="material-icons">wifi_off</span>
@@ -354,6 +401,7 @@
                     {lastRefreshTimestamp}
                     {highlightKeywords}
                     {searchQuery}
+                    {favoriteTags}
                     onMarkAsRead={markAsRead}
                     onToggleFavorite={toggleFavorite}
                     onGenerateSummary={generateSummary}
@@ -549,6 +597,32 @@
 
     .spinning {
         animation: spin 1s linear infinite;
+    }
+
+    /* ─── Tag search ─────────────────────────────────────────────── */
+    .tag-search {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        padding: 0.6rem 1rem;
+        background: #fff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+    }
+
+    .tag-search-title {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #333;
+    }
+
+    .tag-search-title .material-icons {
+        font-size: 1.05rem;
+        color: #ff6b35;
     }
 
     /* ─── Article List ───────────────────────────────────────────── */

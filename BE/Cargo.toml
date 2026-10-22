@@ -1,6 +1,6 @@
 [package]
 name = "meigrss"
-version = "3.5.0"
+version = "4.0.0"
 edition = "2024"
 description = "MeigRSS - Your personal news feed aggregator with AI summaries"
 authors = ["Giulio Magini"]
@@ -31,7 +31,7 @@ quick-xml = "0.42"
 reqwest = { version = "0.13", features = ["json", "gzip", "brotli"] }
 
 # HTML scraping and text extraction
-scraper = "0.27"
+scraper = "0.29"
 
 # Mozilla Readability algorithm for reliable article text extraction
 readabilityrs = "0.1"

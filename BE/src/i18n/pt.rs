@@ -13,7 +13,9 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
 
     // Menu bar
     t.insert("menu_feeds", "Feeds");
-    t.insert("menu_categories", "Categorias");
+    t.insert("menu_organize", "Organizar");
+    t.insert("menu_feed_categories", "Categorias dos feeds");
+    t.insert("menu_favorite_tags", "Etiquetas dos favoritos");
     t.insert("menu_settings", "Definições");
     t.insert("menu_api_config", "Configuração da API");
     t.insert("menu_refresh", "Atualizar feeds");
@@ -67,6 +69,27 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("cat_delete_error_has_feeds", "Não é possível eliminar: a categoria ainda tem feeds associados");
     t.insert("cat_delete_error_default", "A categoria predefinida não pode ser eliminada");
     t.insert("cat_name_reserved", "Este nome está reservado para a categoria predefinida");
+    t.insert("cat_name_exists", "Já existe uma categoria com este nome");
+    t.insert("cat_description", "As categorias agrupam feeds, não artigos individuais: cada feed pertence a uma única categoria, herdada por todos os seus artigos. Usa-as para filtrar a lista de artigos por fonte (por exemplo Tecnologia, Economia, Desporto). Para organizar os teus favoritos por tema, usa antes as etiquetas dos favoritos.");
+
+    // Favorite tags
+    t.insert("tag_description",
+        "As etiquetas servem para organizar por tema os artigos guardados nos favoritos e aplicam-se apenas a eles: cada favorito pode ter até 3. Na lista de artigos, escolhendo \"Apenas favoritos\", podes filtrá-los por etiqueta. Mudar o nome de uma etiqueta atualiza-a em todos os artigos; eliminá-la remove-a dos artigos que a usam.");
+    t.insert("tag_add", "Adicionar etiqueta");
+    t.insert("tag_rename", "Mudar o nome da etiqueta");
+    t.insert("tag_delete", "Eliminar etiqueta");
+    t.insert("tag_name_exists", "Já existe uma etiqueta com este nome");
+    t.insert("tag_delete_confirm", "Favoritos com esta etiqueta: {n}. Ao eliminá-la, será removida de todos. Continuar?");
+    t.insert("tag_search_title", "Pesquisa por etiqueta");
+    t.insert("tag_select_placeholder", "Seleciona uma etiqueta");
+    t.insert("tag_limit_hint", "Máximo de {n} etiquetas");
+    t.insert("tag_none_defined", "Nenhuma etiqueta definida: podes criá-las em Organizar > Etiquetas dos favoritos");
+    t.insert("tag_none_assigned", "Nenhuma etiqueta associada");
+    t.insert("tag_remove", "Remover etiqueta");
+    t.insert("btn_edit_tags", "Editar etiquetas");
+    t.insert("btn_exit_tags", "Sair");
+    t.insert("tag_limit_reached", "Este artigo já tem o número máximo de etiquetas");
+    t.insert("tag_article_not_favorite", "As etiquetas só podem ser atribuídas a artigos favoritos");
 
     // Feed management
     t.insert("feed_add", "Adicionar feed");
@@ -123,7 +146,7 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     // Confirm dialogs
     t.insert("confirm_delete_all_feeds",
         "Tens a certeza? Esta ação eliminará todos os feeds, incluindo os artigos associados, favoritos ou não, e é irreversível.");
-    t.insert("delete_categories_too", "Eliminar também todas as categorias");
+    t.insert("delete_categories_and_tags_too", "Eliminar também categorias e etiquetas");
     t.insert("confirm_yes", "Confirmar");
     t.insert("confirm_no", "Cancelar");
 

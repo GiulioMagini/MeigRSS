@@ -1,4 +1,4 @@
-use rusqlite::{params, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
 use super::Database;
 
@@ -10,6 +10,49 @@ pub struct Category {
     pub name: String,
     pub is_default: bool,
 }
+
+/// Maximum number of tags a favorite article can have, which is also the
+/// maximum number of tags the tag search accepts at once: the two limits are
+/// kept equal on purpose.
+pub const MAX_TAGS: usize = 3;
+
+/// A favorite tag as listed for management, with the number of articles using
+/// it so that deleting a tag in use can ask for confirmation first.
+#[derive(Debug, Serialize)]
+pub struct FavoriteTag {
+    pub id: i64,
+    pub name: String,
+    pub article_count: i64,
+}
+
+/// A tag as attached to an article.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ArticleTag {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Result of assigning a tag to an article, one variant per case the API
+/// reports differently.
+pub enum TagAssignment {
+    /// The tag is on the article (just added or already there): its tags.
+    Assigned(Vec<ArticleTag>),
+    ArticleNotFound,
+    /// Tags can only be assigned to favorites.
+    NotFavorite,
+    TagNotFound,
+    /// The article already has `MAX_TAGS` tags.
+    LimitReached,
+}
+
+/// SQL expression returning the tags of the article aliased `a` as a JSON
+/// array of `{id, name}` objects ordered by name (`[]` when it has none).
+/// Shared by every query that returns articles together with their tags.
+const ARTICLE_TAGS_JSON: &str =
+    "(SELECT json_group_array(json_object('id', t.id, 'name', t.name) ORDER BY t.name COLLATE NOCASE, t.name)
+      FROM article_tags l
+      JOIN favorite_tags t ON t.id = l.tag_id
+      WHERE l.article_id = a.id)";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Feed {
@@ -56,6 +99,35 @@ pub struct ArticleQuery {
     pub page: Option<u32>,
     pub per_page: Option<u32>,        // 10, 50, or 100
     pub search: Option<String>,       // search in article title
+    // Favorite tags to match (any of them), as "3,7,12". Applied only together
+    // with favorites_filter = "only"
+    #[serde(default, deserialize_with = "deserialize_tag_ids")]
+    pub tag_ids: Vec<i64>,
+}
+
+/// Parses the comma-separated `tag_ids` query parameter. Duplicates are
+/// dropped; a malformed id or more than `MAX_TAGS` distinct ids reject the
+/// whole request, since the frontend never produces them.
+fn deserialize_tag_ids<'de, D>(deserializer: D) -> std::result::Result<Vec<i64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let raw = String::deserialize(deserializer)?;
+    let mut ids: Vec<i64> = Vec::new();
+    for part in raw.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let id = part
+            .parse::<i64>()
+            .map_err(|_| D::Error::custom(format!("invalid tag id: {part}")))?;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    if ids.len() > MAX_TAGS {
+        return Err(D::Error::custom(format!("at most {MAX_TAGS} tags can be searched at once")));
+    }
+    Ok(ids)
 }
 
 #[derive(Debug, Serialize)]
@@ -88,6 +160,7 @@ pub struct ArticleWithFeed {
     pub force_ai_summary: bool,
     pub is_read: bool,
     pub newsletter_html: String,
+    pub tags: Vec<ArticleTag>,        // always empty for non-favorites
 }
 
 /// Lightweight structure for feed import/export operations.
@@ -115,6 +188,10 @@ pub struct FullExport {
     pub favorites: Vec<FavoriteArticleExport>,
     #[serde(default)]
     pub settings: Option<SettingsExport>,
+    // Names of all favorite tags, including unused ones. Defaulted so JSON
+    // files exported before favorite tags existed still import
+    #[serde(default)]
+    pub favorite_tags: Vec<String>,
 }
 
 /// Result of an import operation with separate counters.
@@ -136,6 +213,9 @@ pub struct FavoriteArticleExport {
     pub summary_source: String,
     pub feed_url: String,
     pub newsletter_html: String,
+    // Tag names, re-linked by name on import. Defaulted for older exports
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Lightweight category structure for export (excludes the default category).
@@ -220,6 +300,152 @@ impl Database {
             "DELETE FROM categories WHERE id = ?1 AND is_default = 0",
             params![id],
         )
+    }
+
+    // ─── Favorite tag operations ───────────────────────────────────────────
+
+    /// Returns all favorite tags ordered by name, each with the number of
+    /// articles it is assigned to.
+    pub fn get_favorite_tags(&self) -> Result<Vec<FavoriteTag>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.name, COUNT(l.article_id)
+             FROM favorite_tags t
+             LEFT JOIN article_tags l ON l.tag_id = t.id
+             GROUP BY t.id
+             ORDER BY t.name COLLATE NOCASE, t.name"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(FavoriteTag {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                article_count: row.get(2)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Creates a new favorite tag. Returns the new tag's ID.
+    /// Fails with a UNIQUE constraint violation if the name already exists.
+    pub fn add_favorite_tag(&self, name: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("INSERT INTO favorite_tags (name) VALUES (?1)", params![name])?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Renames a favorite tag. Articles reference tags by ID, so they show the
+    /// new name right away. Fails with a UNIQUE constraint violation if the
+    /// name already exists; returns 0 if the tag does not exist.
+    pub fn rename_favorite_tag(&self, id: i64, new_name: &str) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE favorite_tags SET name = ?1 WHERE id = ?2",
+            params![new_name, id],
+        )
+    }
+
+    /// Deletes a favorite tag, even if in use: the cascade removes it from
+    /// every article that has it. Returns 0 if the tag does not exist.
+    pub fn delete_favorite_tag(&self, id: i64) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM favorite_tags WHERE id = ?1", params![id])
+    }
+
+    /// Assigns a tag to an article, enforcing that the article is a favorite
+    /// and has fewer than `MAX_TAGS` tags. Assigning a tag the article already
+    /// has succeeds without changes.
+    pub fn assign_article_tag(&self, article_id: &str, tag_id: i64) -> Result<TagAssignment> {
+        // The connection mutex serializes every database access of the
+        // process, so nothing can change between the checks and the insert.
+        let conn = self.conn.lock().unwrap();
+
+        let is_favorite: Option<bool> = conn
+            .query_row(
+                "SELECT is_favorite FROM articles WHERE id = ?1",
+                params![article_id],
+                |row| Ok(row.get::<_, i64>(0)? == 1),
+            )
+            .optional()?;
+        match is_favorite {
+            None => return Ok(TagAssignment::ArticleNotFound),
+            Some(false) => return Ok(TagAssignment::NotFavorite),
+            Some(true) => {}
+        }
+
+        let tag_exists = conn
+            .query_row("SELECT 1 FROM favorite_tags WHERE id = ?1", params![tag_id], |_| Ok(()))
+            .optional()?
+            .is_some();
+        if !tag_exists {
+            return Ok(TagAssignment::TagNotFound);
+        }
+
+        let tags = Self::article_tags(&conn, article_id)?;
+        if tags.iter().any(|t| t.id == tag_id) {
+            return Ok(TagAssignment::Assigned(tags));
+        }
+        if tags.len() >= MAX_TAGS {
+            return Ok(TagAssignment::LimitReached);
+        }
+
+        conn.execute(
+            "INSERT INTO article_tags (article_id, tag_id) VALUES (?1, ?2)",
+            params![article_id, tag_id],
+        )?;
+        Ok(TagAssignment::Assigned(Self::article_tags(&conn, article_id)?))
+    }
+
+    /// Removes a tag from an article and returns the tags it still has.
+    /// Removing a tag the article does not have changes nothing.
+    pub fn unassign_article_tag(&self, article_id: &str, tag_id: i64) -> Result<Vec<ArticleTag>> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM article_tags WHERE article_id = ?1 AND tag_id = ?2",
+            params![article_id, tag_id],
+        )?;
+        Self::article_tags(&conn, article_id)
+    }
+
+    /// Deletes all favorite tags, and with them every tag assignment.
+    pub fn delete_all_favorite_tags(&self) -> Result<usize> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.execute("DELETE FROM favorite_tags", [])?;
+        let _ = conn.execute("DELETE FROM sqlite_sequence WHERE name = 'favorite_tags'", []);
+        Ok(result)
+    }
+
+    /// Exports the names of all favorite tags, including unused ones.
+    pub fn export_favorite_tags(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT name FROM favorite_tags ORDER BY name COLLATE NOCASE, name"
+        )?;
+        let rows = stmt.query_map([], |row| row.get(0))?;
+        rows.collect()
+    }
+
+    /// Imports favorite tags by name, skipping names that already exist.
+    pub fn import_favorite_tags(&self, names: &[String]) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        for name in names.iter().filter(|n| !n.trim().is_empty()) {
+            tx.execute("INSERT OR IGNORE INTO favorite_tags (name) VALUES (?1)", params![name])?;
+        }
+        tx.commit()
+    }
+
+    /// Returns the tags of an article ordered by name (empty if the article
+    /// does not exist). Takes the connection so callers already holding the
+    /// lock can use it.
+    fn article_tags(conn: &Connection, article_id: &str) -> Result<Vec<ArticleTag>> {
+        let tags = conn
+            .query_row(
+                &format!("SELECT {ARTICLE_TAGS_JSON} FROM articles a WHERE a.id = ?1"),
+                params![article_id],
+                |row| json_column(row, 0),
+            )
+            .optional()?;
+        Ok(tags.unwrap_or_default())
     }
 
     // ─── Feed operations ───────────────────────────────────────────────────
@@ -464,12 +690,14 @@ impl Database {
     pub fn export_favorites(&self) -> Result<Vec<FavoriteArticleExport>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT a.url, a.title, a.author, a.published_at, a.full_text,
-                    a.summary, a.summary_source, f.url, a.newsletter_html
-             FROM articles a
-             JOIN feeds f ON a.feed_id = f.id
-             WHERE a.is_favorite = 1
-             ORDER BY a.published_at DESC"
+                &format!(
+                "SELECT a.url, a.title, a.author, a.published_at, a.full_text,
+                        a.summary, a.summary_source, f.url, a.newsletter_html, {ARTICLE_TAGS_JSON}
+                 FROM articles a
+                 JOIN feeds f ON a.feed_id = f.id
+                 WHERE a.is_favorite = 1
+                 ORDER BY a.published_at DESC"
+            )
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(FavoriteArticleExport {
@@ -482,6 +710,10 @@ impl Database {
                 summary_source: row.get(6)?,
                 feed_url: row.get(7)?,
                 newsletter_html: row.get(8)?,
+                tags: json_column::<Vec<ArticleTag>>(row, 9)?
+                    .into_iter()
+                    .map(|t| t.name)
+                    .collect(),
             })
         })?;
         rows.collect()
@@ -535,12 +767,13 @@ impl Database {
             };
 
             // Insert the article, skip if URL already exists
+            let article_id = uuid::Uuid::new_v4().to_string();
             let result = conn.execute(
                 "INSERT OR IGNORE INTO articles
                  (id, feed_id, url, title, author, published_at, full_text, summary, summary_source, is_favorite, fetched_at, newsletter_html)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, datetime('now'), ?10)",
                 params![
-                    uuid::Uuid::new_v4().to_string(),
+                    article_id,
                     feed_id,
                     fav.url,
                     fav.title,
@@ -555,6 +788,26 @@ impl Database {
 
             if result > 0 {
                 imported += 1;
+
+                // Re-link the tags by name, creating any the export did not
+                // list. Blank names, duplicates and anything past the
+                // per-article limit (possible only in hand-edited files) are
+                // dropped.
+                let mut names: Vec<&str> = Vec::new();
+                for name in fav.tags.iter().map(String::as_str) {
+                    if !name.trim().is_empty() && !names.contains(&name) {
+                        names.push(name);
+                    }
+                }
+                names.truncate(MAX_TAGS);
+                for name in names {
+                    conn.execute("INSERT OR IGNORE INTO favorite_tags (name) VALUES (?1)", params![name])?;
+                    conn.execute(
+                        "INSERT OR IGNORE INTO article_tags (article_id, tag_id)
+                         SELECT ?1, id FROM favorite_tags WHERE name = ?2",
+                        params![article_id, name],
+                    )?;
+                }
             }
         }
 
@@ -699,6 +952,38 @@ impl Database {
         )
     }
 
+    /// Replaces the full text of an article with text written by the user.
+    ///
+    /// If the article has an AI summary and the text actually changes, the
+    /// summary is cleared and its source set back to "none", so a new AI
+    /// summary can be generated from the updated text. Feed summaries are left
+    /// untouched, and so is everything when the text is saved unchanged.
+    ///
+    /// Returns the resulting `(summary, summary_source)`, or `None` if the
+    /// article does not exist.
+    pub fn save_manual_full_text(&self, article_id: &str, full_text: &str) -> Result<Option<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        // SET expressions read the pre-update row, so the CASE conditions see
+        // the old full_text and summary_source regardless of assignment order.
+        let result = conn.query_row(
+            "UPDATE articles SET
+                 summary = CASE WHEN summary_source = 'llm' AND full_text <> ?1
+                                THEN '' ELSE summary END,
+                 summary_source = CASE WHEN summary_source = 'llm' AND full_text <> ?1
+                                       THEN 'none' ELSE summary_source END,
+                 full_text = ?1
+             WHERE id = ?2
+             RETURNING summary, summary_source",
+            params![full_text, article_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        );
+        match result {
+            Ok(summary) => Ok(Some(summary)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// Retrieves the full text of an article by its ID.
     pub fn get_article_full_text(&self, article_id: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
@@ -765,13 +1050,20 @@ impl Database {
         }
     }
 
-    /// Toggles the favorite status of an article.
+    /// Toggles the favorite status of an article. Removing it from favorites
+    /// also drops its tags, since only favorites can have them.
     pub fn set_article_favorite(&self, article_id: &str, is_favorite: bool) -> Result<usize> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let updated = tx.execute(
             "UPDATE articles SET is_favorite = ?1 WHERE id = ?2",
             params![is_favorite as i64, article_id],
-        )
+        )?;
+        if !is_favorite {
+            tx.execute("DELETE FROM article_tags WHERE article_id = ?1", params![article_id])?;
+        }
+        tx.commit()?;
+        Ok(updated)
     }
 
     /// Marks an article as read.
@@ -888,6 +1180,22 @@ impl Database {
         match query.favorites_filter.as_deref() {
             Some("only") => {
                 conditions.push("a.is_favorite = 1".to_string());
+
+                // Tags exist only on favorites, so the tag filter belongs to
+                // this view alone: a selection left over from it never
+                // narrows the other views.
+                if !query.tag_ids.is_empty() {
+                    let mut placeholders = Vec::with_capacity(query.tag_ids.len());
+                    for tag_id in &query.tag_ids {
+                        placeholders.push(format!("?{}", param_index));
+                        param_values.push(Box::new(*tag_id));
+                        param_index += 1;
+                    }
+                    conditions.push(format!(
+                        "EXISTS (SELECT 1 FROM article_tags l WHERE l.article_id = a.id AND l.tag_id IN ({}))",
+                        placeholders.join(", ")
+                    ));
+                }
             }
             Some("exclude") => {
                 conditions.push("a.is_favorite = 0".to_string());
@@ -929,14 +1237,15 @@ impl Database {
         let select_sql = format!(
             "SELECT a.id, a.feed_id, a.url, a.title, a.author, a.published_at,
                     a.full_text, a.summary, a.summary_source, a.is_favorite, a.fetched_at,
-                    f.site_name, f.title, f.category_id, c.name, f.enable_scraping, f.force_ai_summary, a.is_read, a.newsletter_html
+                    f.site_name, f.title, f.category_id, c.name, f.enable_scraping, f.force_ai_summary, a.is_read, a.newsletter_html,
+             {}
              FROM articles a
              JOIN feeds f ON a.feed_id = f.id
              JOIN categories c ON f.category_id = c.id
              {}
              ORDER BY {}
              LIMIT ?{} OFFSET ?{}",
-            where_clause, sort_clause, param_index, param_index + 1
+             ARTICLE_TAGS_JSON, where_clause, sort_clause, param_index, param_index + 1
         );
 
         let mut all_params = param_values;
@@ -969,6 +1278,7 @@ impl Database {
                 force_ai_summary: row.get::<_, i64>(16)? == 1,
                 is_read: row.get::<_, i64>(17)? == 1,
                 newsletter_html: row.get(18)?,
+                tags: json_column(row, 19)?,
             })
         })?.collect::<Result<Vec<_>>>()?;
 
@@ -1145,4 +1455,13 @@ impl Database {
         })?;
         rows.collect()
     }
+}
+
+/// Decodes a result column holding JSON built by SQLite (e.g. with
+/// `json_group_array`) into `T`.
+fn json_column<T: serde::de::DeserializeOwned>(row: &rusqlite::Row, idx: usize) -> Result<T> {
+    let raw: String = row.get(idx)?;
+    serde_json::from_str(&raw).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(idx, rusqlite::types::Type::Text, Box::new(e))
+    })
 }

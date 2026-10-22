@@ -13,7 +13,9 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
 
     // Menu bar
     t.insert("menu_feeds", "Flux");
-    t.insert("menu_categories", "Catégories");
+    t.insert("menu_organize", "Organiser");
+    t.insert("menu_feed_categories", "Catégories des flux");
+    t.insert("menu_favorite_tags", "Tags des favoris");
     t.insert("menu_settings", "Paramètres");
     t.insert("menu_api_config", "Configuration API");
     t.insert("menu_refresh", "Actualiser les flux");
@@ -67,6 +69,27 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     t.insert("cat_delete_error_has_feeds", "Suppression impossible : la catégorie contient encore des flux associés");
     t.insert("cat_delete_error_default", "La catégorie par défaut ne peut pas être supprimée");
     t.insert("cat_name_reserved", "Ce nom est réservé à la catégorie par défaut");
+    t.insert("cat_name_exists", "Une catégorie portant ce nom existe déjà");
+    t.insert("cat_description", "Les catégories regroupent les flux, et non les articles individuels : chaque flux appartient à une seule catégorie, dont héritent tous ses articles. Utilise-les pour filtrer la liste des articles selon la source (par exemple Technologie, Économie, Sport). Pour organiser tes favoris par sujet, utilise plutôt les tags des favoris.");
+
+    // Favorite tags
+    t.insert("tag_description",
+        "Les tags servent à organiser par sujet les articles enregistrés dans tes favoris et ne s'appliquent qu'à eux : chaque favori peut en avoir jusqu'à 3. Dans la liste des articles, en choisissant « Favoris uniquement », tu peux les filtrer par tag. Renommer un tag le met à jour sur tous les articles, le supprimer le retire de ceux qui l'utilisent.");
+    t.insert("tag_add", "Ajouter un tag");
+    t.insert("tag_rename", "Renommer le tag");
+    t.insert("tag_delete", "Supprimer le tag");
+    t.insert("tag_name_exists", "Un tag portant ce nom existe déjà");
+    t.insert("tag_delete_confirm", "Favoris avec ce tag : {n}. Le supprimer le retirera de tous. Continuer ?");
+    t.insert("tag_search_title", "Recherche par tag");
+    t.insert("tag_select_placeholder", "Sélectionne un tag");
+    t.insert("tag_limit_hint", "{n} tags maximum");
+    t.insert("tag_none_defined", "Aucun tag défini : tu peux les créer depuis Organiser > Tags des favoris");
+    t.insert("tag_none_assigned", "Aucun tag associé");
+    t.insert("tag_remove", "Retirer le tag");
+    t.insert("btn_edit_tags", "Modifier les tags");
+    t.insert("btn_exit_tags", "Quitter");
+    t.insert("tag_limit_reached", "Cet article a déjà le nombre maximum de tags");
+    t.insert("tag_article_not_favorite", "Les tags ne peuvent être attribués qu'aux articles favoris");
 
     // Feed management
     t.insert("feed_add", "Ajouter un flux");
@@ -123,7 +146,7 @@ pub(super) fn translations() -> HashMap<&'static str, &'static str> {
     // Confirm dialogs
     t.insert("confirm_delete_all_feeds",
         "Es-tu sûr ? Cette action supprimera tous les flux, y compris les articles associés, favoris ou non, et elle est irréversible.");
-    t.insert("delete_categories_too", "Supprimer aussi toutes les catégories");
+    t.insert("delete_categories_and_tags_too", "Supprimer aussi les catégories et les tags");
     t.insert("confirm_yes", "Confirmer");
     t.insert("confirm_no", "Annuler");
 

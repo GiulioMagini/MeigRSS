@@ -80,6 +80,23 @@ impl Database {
                 FOREIGN KEY (feed_id) REFERENCES feeds(id) ON DELETE CASCADE
             );
 
+            -- Tags for organizing favorite articles by topic
+            CREATE TABLE IF NOT EXISTS favorite_tags (
+                id      INTEGER PRIMARY KEY AUTOINCREMENT,
+                name    TEXT NOT NULL UNIQUE
+            );
+
+            -- Many-to-many link between favorite articles and their tags.
+            -- Both sides cascade: deleting a tag removes it from every article,
+            -- deleting an article (or its feed) drops its links.
+            CREATE TABLE IF NOT EXISTS article_tags (
+                article_id  TEXT NOT NULL,
+                tag_id      INTEGER NOT NULL,
+                PRIMARY KEY (article_id, tag_id),
+                FOREIGN KEY (article_id) REFERENCES articles(id) ON DELETE CASCADE,
+                FOREIGN KEY (tag_id) REFERENCES favorite_tags(id) ON DELETE CASCADE
+            ) WITHOUT ROWID;
+
             -- API provider configuration (single row, updated in place)
             CREATE TABLE IF NOT EXISTS api_config (
                 id              INTEGER PRIMARY KEY CHECK (id = 1),  -- enforce single row
@@ -101,6 +118,9 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_articles_is_favorite ON articles(is_favorite);
             CREATE INDEX IF NOT EXISTS idx_articles_fetched_at ON articles(fetched_at);
             CREATE INDEX IF NOT EXISTS idx_feeds_category_id ON feeds(category_id);
+            -- Serves the tag filter and the cascade on tag deletion (the primary
+            -- key already covers lookups by article)
+            CREATE INDEX IF NOT EXISTS idx_article_tags_tag_id ON article_tags(tag_id);
 
             -- Web rendering API configuration (single row, same pattern as api_config)
             CREATE TABLE IF NOT EXISTS web_rendering_config (

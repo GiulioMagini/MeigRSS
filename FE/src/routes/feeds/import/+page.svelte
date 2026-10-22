@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Feed import: upload JSON file to import feeds -->
 <script>
     import { onMount, getContext } from "svelte";

@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Delete all feeds: confirmation page -->
 <script>
     import { getContext } from "svelte";
@@ -9,12 +8,12 @@
     const setLoading = getContext("setLoading");
 
     let done = $state(false);
-    let deleteCategories = $state(false);
+    let deleteCategoriesAndTags = $state(false);
 
     async function deleteAll() {
         setLoading(true);
         try {
-            await apiDelete(`/api/feeds/delete-all?delete_categories=${deleteCategories}`);
+            await apiDelete(`/api/feeds/delete-all?delete_categories_and_tags=${deleteCategoriesAndTags}`);
             done = true;
         } catch (e) {
             console.error(e);
@@ -36,8 +35,8 @@
         {:else}
             <p class="warning-text">{t('confirm_delete_all_feeds')}</p>
             <label class="checkbox-row">
-                <input type="checkbox" bind:checked={deleteCategories} />
-                <span>{t('delete_categories_too')}</span>
+                <input type="checkbox" bind:checked={deleteCategoriesAndTags} />
+                <span>{t('delete_categories_and_tags_too')}</span>
             </label>
             <div class="btn-row">
                 <button class="danger-btn" onclick={deleteAll}>

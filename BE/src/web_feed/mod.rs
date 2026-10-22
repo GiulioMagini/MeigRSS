@@ -382,24 +382,19 @@ async fn fetch_direct(client: &Client, page_url: &str) -> Result<String, ScanErr
         })
 }
 
-/// Extracts the base domain from a URL to build the date-based pattern.
-/// e.g. "https://www.news.online/c/science/" → "www.news.online"
+/// Extracts the host of a URL, used as the domain pattern that article links
+/// must match. The port is left out, since links are compared by host only.
+/// e.g. "https://www.news.online:8080/c/science/" → "www.news.online"
 fn extract_domain_pattern(url: &str) -> Result<String, String> {
-    let without_scheme = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .ok_or_else(|| "Invalid URL: missing http(s) scheme".to_string())?;
-
-    let domain = without_scheme
-        .split('/')
-        .next()
-        .ok_or_else(|| "Invalid URL: cannot extract domain".to_string())?;
-
-    if domain.is_empty() {
-        return Err("Invalid URL: empty domain".to_string());
+    let parsed = Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("Invalid URL: missing http(s) scheme".to_string());
     }
 
-    Ok(domain.to_string())
+    parsed
+        .host_str()
+        .map(str::to_string)
+        .ok_or_else(|| "Invalid URL: empty domain".to_string())
 }
 
 /// Extracts article links from HTML that match a date-based URL pattern.
@@ -807,11 +802,10 @@ impl SimpleDateUrlMatcher {
         let (year_num, month_num, day_num) = if let Some(y) = Self::valid_year(parts[0]) {
             // yyyy-mm-dd
             (y, Self::parse_month(parts[1])?, Self::parse_day(parts[2])?)
-        } else if let Some(y) = Self::valid_year(parts[2]) {
-            // dd-mm-yyyy (day first)
-            (y, Self::parse_month(parts[1])?, Self::parse_day(parts[0])?)
         } else {
-            return None;
+            // dd-mm-yyyy (day first), or no valid layout at all
+            let y = Self::valid_year(parts[2])?;
+            (y, Self::parse_month(parts[1])?, Self::parse_day(parts[0])?)
         };
 
         // The slug is the following path segment

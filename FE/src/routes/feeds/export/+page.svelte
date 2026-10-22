@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Feed export: download all feeds as OPML or JSON -->
 <script>
     import { getContext } from "svelte";

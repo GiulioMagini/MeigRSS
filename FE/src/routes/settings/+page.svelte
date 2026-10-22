@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Settings page: retention period, auto-update interval -->
 <script>
     import { onMount, getContext } from "svelte";

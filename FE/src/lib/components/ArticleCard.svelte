@@ -1,11 +1,11 @@
-<!-- @ts-nocheck -->
 <!-- ArticleCard: Single article in the feed list.
      Expandable: click to show summary, full text, and action buttons. -->
 <script>
-    import { sanitize, stripHtml, apiPost, apiPut, categoryNameDisplay } from "#lib/api.js";
+    import { sanitize, stripHtml, apiPost, apiPut, apiDelete, categoryNameDisplay } from "#lib/api.js";
     import { t } from "#lib/i18n.svelte.js";
+    import TagPicker from "#lib/components/TagPicker.svelte";
 
-    let { article = $bindable(), lastRefreshTimestamp, highlightKeywords, searchQuery, onMarkAsRead, onToggleFavorite, onGenerateSummary } = $props();
+    let { article = $bindable(), lastRefreshTimestamp, highlightKeywords, searchQuery, favoriteTags, onMarkAsRead, onToggleFavorite, onGenerateSummary } = $props();
 
     // Article is "new" if it was fetched during or after the last refresh, or if it is already read, so we are returning to the page
     const isNew = $derived(
@@ -34,6 +34,9 @@
     let fullTextDraft = $state("");
     let saveLoading = $state(false);
     let saveError = $state("");
+    let editingTags = $state(false);
+    let tagsLoading = $state(false);
+    let tagsError = $state("");
 
     // Summary source label
     const sourceLabel = $derived(
@@ -69,6 +72,8 @@
 
     function handleFavorite(e) {
         e.stopPropagation();
+        // Removing the favorite drops its tags too, so the editor has nothing left to edit
+        if (article.is_favorite) editingTags = false;
         onToggleFavorite(article.id, article.is_favorite);
     }
 
@@ -127,6 +132,8 @@
     /**
      * Persists the edited full text and leaves edit mode.
      * Saving an empty text is allowed and clears the field.
+     * The summary is taken from the response, since the server discards an AI
+     * summary when the text changes.
      */
     async function saveFullText() {
         saveLoading = true;
@@ -135,6 +142,8 @@
             const res = await apiPut(`/api/articles/${article.id}/full-text`, { full_text: fullTextDraft });
             if (res.success) {
                 article.full_text = fullTextDraft;
+                article.summary = res.data.summary;
+                article.summary_source = res.data.source;
                 editingFullText = false;
                 fullTextDraft = "";
             }
@@ -143,6 +152,46 @@
             saveError = t(errKey) || errKey;
         }
         saveLoading = false;
+    }
+
+     /**
+     * Enters tag edit mode, turning the tag chips into the tag picker.
+     */
+    function startEditTags() {
+        tagsError = "";
+        editingTags = true;
+    }
+
+    /**
+     * Assigns a favorite tag to the article.
+     */
+    function addTag(tag) {
+        return updateTags(() => apiPut(`/api/articles/${article.id}/tags/${tag.id}`));
+    }
+
+    /**
+     * Removes a favorite tag from the article.
+     */
+    function removeTag(tag) {
+        return updateTags(() => apiDelete(`/api/articles/${article.id}/tags/${tag.id}`));
+    }
+
+    /**
+     * Runs a tag change request and takes the article's tags from the
+     * response, since the backend is the one enforcing the favorite-only rule
+     * and the tag limit.
+     */
+    async function updateTags(request) {
+        tagsLoading = true;
+        tagsError = "";
+        try {
+            const res = await request();
+            if (res.success) article.tags = res.data;
+        } catch (e) {
+            const errKey = e.message || "";
+            tagsError = t(errKey) || errKey;
+        }
+        tagsLoading = false;
     }
 
     // Automatically generate AI summary when scraping completes,
@@ -199,7 +248,7 @@
 
 <article class="card" class:expanded class:is-new={isNew} class:search-dimmed={!matchesSearch()}>
     <!-- Header row: always visible -->
-    <div class="card-header" role="button" tabindex="0" onclick={() => { expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } else { cancelEditFullText(); } }} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } else { cancelEditFullText(); } } }}>
+    <div class="card-header" role="button" tabindex="0" onclick={() => { expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } else { cancelEditFullText(); editingTags = false; } }} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded = !expanded; if (expanded) { onMarkAsRead(article.id); scrapeFullText(); } else { cancelEditFullText(); editingTags = false; } } }}>
         <div class="header-left">
             <span class="site-badge">{sanitize({ input: article.site_name })}</span>
             <span class="category-badge">{sanitize({ input: categoryNameDisplay(article.category_name, t) })}</span>
@@ -222,6 +271,36 @@
     <!-- Expanded content -->
     {#if expanded}
         <div class="card-body">
+
+            <!-- Favorite tags: only favorites can have them -->
+            {#if article.is_favorite}
+                {#if editingTags}
+                    <div class="tags-editor">
+                        <TagPicker allTags={favoriteTags} selected={article.tags} disabled={tagsLoading}
+                            onAdd={addTag} onRemove={removeTag} />
+                        <button class="action-btn" onclick={() => editingTags = false}>
+                            <span class="material-icons">check</span>
+                            {t('btn_exit_tags')}
+                        </button>
+                    </div>
+                    {#if tagsError}
+                        <p class="error-msg">{tagsError}</p>
+                    {/if}
+                {:else}
+                    <div class="tags-row">
+                        {#each article.tags as tag (tag.id)}
+                            <span class="tag-chip">{tag.name}</span>
+                        {:else}
+                            <span class="no-tags">{t('tag_none_assigned')}</span>
+                        {/each}
+                        <button class="action-btn" onclick={startEditTags}>
+                            <span class="material-icons">sell</span>
+                            {t('btn_edit_tags')}
+                        </button>
+                    </div>
+                {/if}
+            {/if}
+
             <!-- Summary -->
             {#if article.summary}
                 <div class="summary-section">
@@ -566,6 +645,41 @@
 
     .action-btn .material-icons:global(.hourglass_empty) {
         animation: spin 1.2s linear infinite;
+    }
+
+    /* ─── Favorite tags ──────────────────────────────────────────── */
+    .tags-row, .tags-editor {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .tags-editor {
+        padding: 0.6rem 0.75rem;
+        background: #fafaf8;
+        border: 1px solid #e8e8e4;
+        border-radius: 6px;
+    }
+
+    /* Pushes the exit button to the end of the editor */
+    .tags-editor .action-btn {
+        margin-left: auto;
+    }
+
+    .tag-chip {
+        padding: 0.2rem 0.65rem;
+        background: #fff3ec;
+        border: 1px solid #ffd2bd;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        color: #b4471c;
+    }
+
+    .no-tags {
+        font-size: 0.82rem;
+        color: #999;
+        font-style: italic;
     }
 
     /* ─── Full Text ──────────────────────────────────────────────── */

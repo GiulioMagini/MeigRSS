@@ -264,6 +264,7 @@ fn fix_double_utf8(input: &str) -> String {
 /// Handles two cases:
 /// 1. Feed declares ISO-8859-x but bytes are actually UTF-8 (e.g. FeedBurner proxy)
 /// 2. Feed declares ISO-8859-x and bytes are actually in that encoding
+/// 
 /// In both cases, we convert to valid UTF-8 and update the XML declaration.
 fn fix_feed_encoding(bytes: &[u8]) -> Vec<u8> {
     let header_len = std::cmp::min(bytes.len(), 200);

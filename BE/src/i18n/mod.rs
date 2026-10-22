@@ -59,7 +59,9 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
 
     // Menu bar
     t.insert("menu_feeds", "Feed");
-    t.insert("menu_categories", "Categorie");
+    t.insert("menu_organize", "Organizza");
+    t.insert("menu_feed_categories", "Categorie dei feed");
+    t.insert("menu_favorite_tags", "Tag dei preferiti");
     t.insert("menu_settings", "Impostazioni");
     t.insert("menu_api_config", "Configurazione API");
     t.insert("menu_refresh", "Aggiorna feed");
@@ -113,6 +115,26 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     t.insert("cat_delete_error_has_feeds", "Impossibile eliminare: la categoria ha ancora dei feed associati");
     t.insert("cat_delete_error_default", "La categoria predefinita non può essere eliminata");
     t.insert("cat_name_reserved", "Questo nome è riservato alla categoria predefinita");
+    t.insert("cat_name_exists", "Esiste già una categoria con questo nome");
+    t.insert("cat_description", "Le categorie raggruppano i feed, non i singoli articoli: ogni feed appartiene a una sola categoria, che viene ereditata da tutti i suoi articoli. Usale per filtrare la lista degli articoli in base alla fonte (ad esempio Tecnologia, Economia, Sport). Per organizzare per argomento gli articoli salvati nei preferiti usa invece i tag dei preferiti.");
+
+    // Favorite tags
+    t.insert("tag_description", "I tag servono a organizzare per argomento gli articoli salvati nei preferiti e si applicano solo a quelli: ogni preferito può averne fino a 3. Nella lista articoli, scegliendo \"Solo preferiti\", puoi filtrarli per tag. Rinominare un tag lo aggiorna su tutti gli articoli, eliminarlo lo rimuove da quelli che lo usano.");
+    t.insert("tag_add", "Aggiungi tag");
+    t.insert("tag_rename", "Rinomina tag");
+    t.insert("tag_delete", "Elimina tag");
+    t.insert("tag_name_exists", "Esiste già un tag con questo nome");
+    t.insert("tag_delete_confirm", "Preferiti con questo tag: {n}. Eliminandolo verrà rimosso da tutti. Continuare?");
+    t.insert("tag_search_title", "Ricerca per tag");
+    t.insert("tag_select_placeholder", "Seleziona un tag");
+    t.insert("tag_limit_hint", "Massimo {n} tag");
+    t.insert("tag_none_defined", "Nessun tag definito: puoi crearli da Organizza > Tag dei preferiti");
+    t.insert("tag_none_assigned", "Nessun tag associato");
+    t.insert("tag_remove", "Rimuovi tag");
+    t.insert("btn_edit_tags", "Modifica tag");
+    t.insert("btn_exit_tags", "Esci");
+    t.insert("tag_limit_reached", "Questo articolo ha già il numero massimo di tag");
+    t.insert("tag_article_not_favorite", "I tag si possono assegnare solo agli articoli preferiti");
 
     // Feed management
     t.insert("feed_add", "Aggiungi feed");
@@ -169,7 +191,7 @@ fn italian_translations() -> HashMap<&'static str, &'static str> {
     // Confirm dialogs
     t.insert("confirm_delete_all_feeds",
         "Sei sicuro? Questa azione eliminerà tutti i feed, compresi gli articoli a loro associati, sia preferiti che non, e non è reversibile.");
-        t.insert("delete_categories_too", "Elimina anche tutte le categorie");
+    t.insert("delete_categories_and_tags_too", "Elimina anche categorie e tag");
     t.insert("confirm_yes", "Conferma");
     t.insert("confirm_no", "Annulla");
 
@@ -262,16 +284,15 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
 
     // Menu bar
     t.insert("menu_feeds", "Feeds");
-    t.insert("menu_categories", "Categories");
+    t.insert("menu_organize", "Organize");
+    t.insert("menu_feed_categories", "Feed categories");
+    t.insert("menu_favorite_tags", "Favorite tags");
     t.insert("menu_settings", "Settings");
     t.insert("menu_api_config", "API Configuration");
     t.insert("menu_refresh", "Refresh feeds");
     t.insert("menu_import", "Import feeds");
     t.insert("menu_export", "Export feeds");
     t.insert("menu_delete_all", "Delete all feeds");
-    t.insert("confirm_delete_feed", "Deleting this feed will also remove all its associated articles. Continue?");
-    t.insert("feed_change_category", "Change category");
-    t.insert("import_select_category", "Category for imported feeds:");
 
     // Feed list
     t.insert("summary_from_feed", "Summary from website");
@@ -319,6 +340,27 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("cat_delete_error_has_feeds", "Cannot delete: category still has feeds assigned");
     t.insert("cat_delete_error_default", "The default category cannot be deleted");
     t.insert("cat_name_reserved", "This name is reserved for the default category");
+    t.insert("cat_name_exists", "A category with this name already exists");
+    t.insert("cat_description", "Categories group feeds, not individual articles: each feed belongs to exactly one category, which all of its articles inherit. Use them to filter the article list by source (for example Technology, Business, Sports). To organize your saved favorites by topic, use favorite tags instead.");
+
+    // Favorite tags
+    t.insert("tag_description",
+        "Tags organize your saved favorites by topic and apply only to them: each favorite can have up to 3. In the article list, choosing \"Favorites only\" lets you filter them by tag. Renaming a tag updates it on every article, deleting it removes it from the articles that use it.");
+    t.insert("tag_add", "Add tag");
+    t.insert("tag_rename", "Rename tag");
+    t.insert("tag_delete", "Delete tag");
+    t.insert("tag_name_exists", "A tag with this name already exists");
+    t.insert("tag_delete_confirm", "Favorites with this tag: {n}. Deleting it will remove it from all of them. Continue?");
+    t.insert("tag_search_title", "Search by tag");
+    t.insert("tag_select_placeholder", "Select a tag");
+    t.insert("tag_limit_hint", "Up to {n} tags");
+    t.insert("tag_none_defined", "No tags defined: you can create them from Organize > Favorite tags");
+    t.insert("tag_none_assigned", "No tags assigned");
+    t.insert("tag_remove", "Remove tag");
+    t.insert("btn_edit_tags", "Edit tags");
+    t.insert("btn_exit_tags", "Exit");
+    t.insert("tag_limit_reached", "This article already has the maximum number of tags");
+    t.insert("tag_article_not_favorite", "Tags can only be assigned to favorite articles");
 
     // Feed management
     t.insert("feed_add", "Add feed");
@@ -341,6 +383,9 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     t.insert("feed_api_scraping", "Enable scraping API");
     t.insert("scraping_disclaimer", "Downloading the full text of articles is at the user's discretion. Before enabling it, make sure you comply with the terms of use of the website in question. The software author is not responsible for any misuse of this feature.");
     t.insert("feed_delete", "Remove feed");
+    t.insert("confirm_delete_feed", "Deleting this feed will also remove all its associated articles. Continue?");
+    t.insert("feed_change_category", "Change category");
+    t.insert("import_select_category", "Category for imported feeds:");
 
     // API configuration
     t.insert("api_provider", "Provider");
@@ -372,7 +417,7 @@ fn english_translations() -> HashMap<&'static str, &'static str> {
     // Confirm dialogs
     t.insert("confirm_delete_all_feeds",
         "Are you sure? This will delete all feeds, including their articles (both favorites and not favorites), and cannot be undone.");
-        t.insert("delete_categories_too", "Also delete all categories");
+    t.insert("delete_categories_and_tags_too", "Also delete categories and tags");
     t.insert("confirm_yes", "Confirm");
     t.insert("confirm_no", "Cancel");
 

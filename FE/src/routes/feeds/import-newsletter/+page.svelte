@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Newsletter import: upload a single EML file or a whole folder, choose or create a newsletter feed, import as articles -->
 <script>
     import { onMount, getContext } from "svelte";

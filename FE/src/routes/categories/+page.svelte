@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Categories management: add, rename, delete -->
 <script>
     import { onMount, getContext } from "svelte";
@@ -52,7 +51,10 @@
             editingId = null;
             editingName = "";
             await loadCategories();
-        } catch (e) { error = e.message; } 
+        } catch (e) {
+            const msg = e.message || "";
+            error = t(msg) || msg;
+        }
         finally {
             setLoading(false);
         }
@@ -86,7 +88,9 @@
 </script>
 
 <div class="categories-page">
-    <h2><span class="material-icons">category</span> {t('menu_categories')}</h2>
+    <h2><span class="material-icons">category</span> {t('menu_feed_categories')}</h2>
+    <!-- Explains that categories belong to feeds, to tell them apart from favorite tags -->
+    <p class="desc">{t('cat_description')}</p>
 
     <!-- Add category -->
     <div class="add-row">
@@ -139,6 +143,7 @@
 
     h2 { display: flex; align-items: center; gap: 0.5rem; font-size: 1.15rem; font-weight: 600; margin-bottom: 1.25rem; }
     h2 .material-icons { font-size: 1.3rem; color: #ff6b35; }
+    .desc { font-size: 0.88rem; color: #666; line-height: 1.5; margin-bottom: 1.25rem; }
 
     .add-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
 

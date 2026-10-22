@@ -162,6 +162,7 @@ pub fn parse_opml(xml: &str, default_category: &str) -> Result<FullExport, Strin
         feeds,
         favorites: Vec::new(),
         settings: None,
+        favorite_tags: Vec::new(),
     })
 }
 

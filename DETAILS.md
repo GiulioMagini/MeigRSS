@@ -121,16 +121,16 @@ To stop the program, press `Ctrl+C` in the terminal.
 
 You can also import a feed list via **Feed > Import feeds** using a JSON or OPML file.
 
-> **Note:** Duplicate feeds (same URL) are automatically rejected with a clear message. In OPML files web feeds and their values are saved, but newsletter feeds, settings and favorite articles are not saved.
+> **Note:** Duplicate feeds (same URL) are automatically rejected with a clear message. In OPML files web feeds and their values are saved, but newsletter feeds, settings, favorite articles and favorite tags are not saved.
 
 ### Categories
 
-Categories are used to organize feeds. Two default categories are present and cannot be deleted or renamed:
+Categories organize feeds, not single articles: each feed belongs to exactly one category, which all of its articles inherit, and the main view can be filtered by category. To organize favorite articles by topic, use [favorite tags](#favorite-tags) instead. Two default categories are present and cannot be deleted or renamed:
 
 - **Uncategorized** - the default category for regular RSS feeds
 - **Newsletter** - the fixed category for all newsletter feeds
 
-You can add, rename, and delete other categories from **Categories > Categories**.
+You can add, rename, and delete other categories from **Organize > Feed categories**. A category can only be deleted when no feed belongs to it, and two categories cannot share the same name.
 
 > **Note:** Category names that conflict with the default category translations ("Non categorizzati", "Uncategorized", "Not categorized", "Newsletter") are reserved and cannot be used.
 
@@ -187,6 +187,7 @@ Closing the article while editing discards any unsaved change: reopening it alwa
 - Saving a non-empty text stops automatic scraping for that article, so what you wrote is never silently overwritten
 - Saving an empty text clears the field, and automatic scraping takes over again the next time you open the article, if it is enabled for that feed
 - Once an article has a full text, the **Generate AI summary** button becomes available regardless of the feed's scraping setting
+- Saving a text that differs from the current one discards an existing AI summary, so a new one can be generated from the updated text. Summaries provided by the feed are kept, and saving the text unchanged leaves everything as it is
 - The saved text is limited to 200 KB
 
 ### Automatic AI summary
@@ -287,7 +288,7 @@ The API key is encrypted with AES-256-GCM, same as the AI API key. Free tier ava
 4. Click **Test scan** - the system will render the page, with API if configured, with GET call otherwise, and search for article links
 5. If articles are found, select a category and click **Add web feed**
 
-The scan looks for links whose URL contains a date pattern (see above). Only links pointing to the same domain as the monitored page are captured.
+The scan looks for links whose URL contains a date pattern (see above). Only links pointing to the same domain as the monitored page are captured (a port in the page URL is ignored).
 
 #### How web feeds work
 
@@ -334,13 +335,13 @@ Mistral offers a free plan with limits. Check their site for more information.
 ### Saving the API key in MeigRSS
 
 1. Go to **Settings > API Configuration**
-2. Select the provider (Mistral 500 chars is recommended for summaries)
+2. Select the provider (Mistral 1000 chars is recommended for summaries)
 3. Paste the API key
 4. Click **Save and test**
 
 The key is encrypted with AES-256-GCM and stored in the database. It is never exposed in plain text by any endpoint. The currently saved provider and masked key are displayed in the configuration page.
 
-> **Note:** Mistral 500 chars and Mistral 1000 chars use the same API key. Mistral 500 chars is recommended for summaries: it's faster and uses fewer tokens. If articles are long or complex, use Mistral 1000 chars.
+> **Note:** Mistral 1000 chars is recommended: the smaller model behind Mistral 500 chars may mix English words into summaries written in other languages. Use Mistral 500 chars only if you prefer shorter summaries.
 
 ### Plan information
 
@@ -356,7 +357,7 @@ To delete the saved API key and start over, use the **Delete API configuration**
 
 ### Export
 
-**Feed > Export feeds** make the user choose between JSON and OPML file in order to export all data. For JSON exporting the produced file contains all categories, configured feeds, favorite articles, and application settings (retention period, auto-update configuration, highlighted keywords). OPML files exports only categories, feeds and web feeds with their configurations.
+**Feed > Export feeds** make the user choose between JSON and OPML file in order to export all data. For JSON exporting the produced file contains all categories, configured feeds, favorite articles with their tags, favorite tags (including unused ones), and application settings (retention period, auto-update configuration, highlighted keywords). OPML files exports only categories, feeds and web feeds with their configurations.
 
 ### Import
 
@@ -365,7 +366,7 @@ To delete the saved API key and start over, use the **Delete API configuration**
 - **Keep the original category** of each feed (as saved in the file)
 - Or **assign all feeds to a specific category**
 
-Categories present in the file but not in the database are created automatically. Feeds with URLs already in the database are skipped (no duplicates). Favorite articles are re-associated with their feeds and immediately flagged as favorites. Application settings are restored from the file if present.
+Categories present in the file but not in the database are created automatically. Feeds with URLs already in the database are skipped (no duplicates). Favorite articles are re-associated with their feeds and immediately flagged as favorites. Their tags are re-linked by name, and favorite tags missing from the database are created. Files exported before favorite tags existed import as before. Application settings are restored from the file if present.
 
 The import result shows separate counts for feeds and favorite articles imported.
 
@@ -373,7 +374,7 @@ JSON imports are accepted up to 256 MB. Exporting has no size limit of its own, 
 
 ### Delete all feeds
 
-**Feed > Delete all feeds** removes all feeds and their associated articles. Optionally, you can also delete all categories (except the default one).
+**Feed > Delete all feeds** removes all feeds and their associated articles. Optionally, you can also delete all categories (except the default ones) and all favorite tags.
 
 ---
 
@@ -382,8 +383,22 @@ JSON imports are accepted up to 256 MB. Exporting has no size limit of its own, 
 Click the star next to an article to add it to favorites. Favorite articles:
 
 - Are never deleted by the automatic purge
-- Are included in feed exports
+- Are included in feed exports, together with their tags
 - Can be filtered in the main view (options are: Favorites excluded, All articles, Favorites only)
+- Can be organized by topic with favorite tags
+
+
+### Favorite tags
+
+Favorite tags organize favorite articles by topic, which helps when a single feed covers many subjects (for example a tech feed writing about the AI Act, new LLMs and governance). Unlike categories, which belong to feeds, tags belong to single articles, and only favorites can have them.
+
+**Managing tags.** Go to **Organize > Favorite tags** to add, rename and delete tags. Tag names must be unique, and the comparison is case-sensitive ("AI" and "ai" are different tags). Renaming a tag updates it on every article that has it. A tag can be deleted even while in use: a confirmation shows how many favorites have it, and the tag is then removed from all of them.
+
+**Tagging an article.** Open (expand) a favorite article: the first row shows its tags, or "No tags assigned". Click **Edit tags** to open the editor, pick tags from the dropdown and remove them with the **x** on each chip; every change is saved immediately. Click **Exit** to go back. Each favorite can have up to 3 tags, and tags can only be created from the management page.
+
+**Searching by tag.** When the main view shows **Favorites only**, a **Search by tag** box appears below the toolbar. Pick up to 3 tags to list the favorites that have at least one of them, combined with the category filter and the title search. The selection is kept when you switch view, but it only applies to Favorites only.
+
+> **Note:** Removing an article from favorites also removes its tags, without asking for confirmation.
 
 ---
 

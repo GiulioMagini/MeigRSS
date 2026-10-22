@@ -85,7 +85,7 @@ fn get_encryption_key() -> [u8; 32] {
             let _ = std::fs::create_dir_all(parent);
         }
 
-        if let Err(e) = std::fs::write(&path, BASE64.encode(&key)) {
+        if let Err(e) = std::fs::write(&path, BASE64.encode(key)) {
             tracing::warn!(
                 "Failed to save encryption key to {}: {}. \
                  Key will not persist across restarts.",
@@ -133,7 +133,7 @@ pub fn encrypt_api_key(plaintext: &str) -> Result<(String, String), String> {
 
     Ok((
         BASE64.encode(&ciphertext),
-        BASE64.encode(&nonce_bytes),
+        BASE64.encode(nonce_bytes),
     ))
 }
 

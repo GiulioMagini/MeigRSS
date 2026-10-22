@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- Feed management page: add/remove feeds, test URLs, toggle AI summary, change category -->
 <script>
     import { onMount, getContext } from "svelte";

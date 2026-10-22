@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <!-- API Configuration page: provider, API key, test, plan info -->
 <script>
     import { onMount, getContext } from "svelte";

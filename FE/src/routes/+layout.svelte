@@ -1,4 +1,3 @@
-<!-- @ts-nocheck -->
 <script>
     import { onMount, setContext } from "svelte";
     import { sanitize, apiPut } from "#lib/api.js";
@@ -118,20 +117,24 @@
                 {/if}
             </div>
 
-            <!-- Categories menu -->
+            <!-- Organize menu -->
             <div class="menu-item">
                 <button
                     class="menu-trigger"
-                    onclick={() => toggleMenu("categories")}
+                    onclick={() => toggleMenu("organize")}
                 >
                     <span class="material-icons">category</span>
-                    <span>{t("menu_categories")}</span>
+                    <span>{t("menu_organize")}</span>
                 </button>
-                {#if activeMenu === "categories"}
+                {#if activeMenu === "organize"}
                     <div class="menu-dropdown">
                         <a href="/categories" onclick={() => { activeMenu = null; }}>
                             <span class="material-icons">settings</span>
-                            {t("menu_categories")}
+                            {t("menu_feed_categories")}
+                        </a>
+                        <a href="/favorite-tags" onclick={() => { activeMenu = null; }}>
+                            <span class="material-icons">sell</span>
+                            {t("menu_favorite_tags")}
                         </a>
                     </div>
                 {/if}

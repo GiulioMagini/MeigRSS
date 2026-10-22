@@ -88,6 +88,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/articles/{id}/scrape", post(scrape_article))
         .route("/api/articles/{id}/read", put(mark_article_read))
         .route("/api/articles/{id}/full-text", put(update_full_text))
+        .route("/api/articles/{id}/tags/{tag_id}", put(assign_article_tag))
+        .route("/api/articles/{id}/tags/{tag_id}", delete(unassign_article_tag))
         // Feed endpoints
         .route("/api/feeds", get(get_feeds))
         .route("/api/feeds", post(add_feed))
@@ -135,6 +137,11 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/categories", post(add_category))
         .route("/api/categories/{id}", put(rename_category))
         .route("/api/categories/{id}", delete(delete_category))
+        // Favorite tags
+        .route("/api/favorite-tags", get(get_favorite_tags))
+        .route("/api/favorite-tags", post(add_favorite_tag))
+        .route("/api/favorite-tags/{id}", put(rename_favorite_tag))
+        .route("/api/favorite-tags/{id}", delete(delete_favorite_tag))
         // API configuration endpoints
         .route("/api/config/api", get(get_api_config))
         .route("/api/config/api", post(save_api_config))
@@ -300,17 +307,21 @@ struct FullTextUpdateRequest {
 /// takes over again the next time the card is expanded. A non-empty text, on
 /// the contrary, permanently stops the automatic scraping for that article, so
 /// what the user wrote is never silently overwritten.
+/// When the text changes, an existing AI summary is discarded (summary emptied,
+/// source back to "none") so it can be regenerated from the new text. The
+/// resulting summary and source are returned for the client to stay in sync.
 async fn update_full_text(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(body): Json<FullTextUpdateRequest>,
-) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
+) -> Result<Json<ApiResponse<SummaryResponse>>, (StatusCode, Json<ApiResponse<SummaryResponse>>)> {
     if body.full_text.len() > FULL_TEXT_MAX_SIZE {
         return Err(ApiResponse::err("full_text_too_long"));
     }
 
-    match state.db.update_article_full_text(&id, &body.full_text) {
-        Ok(_) => Ok(ApiResponse::ok(())),
+    match state.db.save_manual_full_text(&id, &body.full_text) {
+        Ok(Some((summary, source))) => Ok(ApiResponse::ok(SummaryResponse { summary, source })),
+        Ok(None) => Err(ApiResponse::err("Article not found")),
         Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
     }
 }
@@ -390,7 +401,7 @@ async fn delete_feed(
 
 #[derive(Deserialize)]
 struct DeleteAllQuery {
-    delete_categories: Option<bool>,
+    delete_categories_and_tags: Option<bool>,
 }
 
 /// DELETE /api/feeds/delete-all - Remove ALL feeds (requires confirmation in UI)
@@ -400,10 +411,15 @@ async fn delete_all_feeds(
 ) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
     match state.db.delete_all_feeds() {
         Ok(_) => {
-            // Optionally delete all non-default categories
-            if query.delete_categories.unwrap_or(false)
-                && let Err(e) = state.db.delete_all_categories() {
-                tracing::error!("Failed to delete categories: {}", e);
+            // Optionally delete all non-default categories and all favorite
+            // tags. Tag assignments are already gone with the articles.
+            if query.delete_categories_and_tags.unwrap_or(false) {
+                if let Err(e) = state.db.delete_all_categories() {
+                    tracing::error!("Failed to delete categories: {}", e);
+                }
+                if let Err(e) = state.db.delete_all_favorite_tags() {
+                    tracing::error!("Failed to delete favorite tags: {}", e);
+                }
             }
             Ok(ApiResponse::ok(()))
         }
@@ -555,19 +571,22 @@ async fn refresh_feeds(
     Ok(ApiResponse::ok(results))
 }
 
-/// GET /api/feeds/export - Export all categories and feeds as JSON
+/// GET /api/feeds/export - Export categories, feeds, favorites (with their
+/// tags), favorite tags and settings as JSON
 async fn export_feeds(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<ApiResponse<db::FullExport>>, (StatusCode, Json<ApiResponse<db::FullExport>>)> {
+) -> Result<Json<ApiResponse<db::FullExport>>, (StatusCode, Json<ApiResponse<()>>)> {
     let categories = state.db.export_categories()
-        .map_err(|e| ApiResponse::<db::FullExport>::internal_err(format!("Database error: {}", e)))?;
+        .map_err(|e| ApiResponse::<()>::internal_err(format!("Database error: {}", e)))?;
     let feeds = state.db.export_feeds()
-        .map_err(|e| ApiResponse::<db::FullExport>::internal_err(format!("Database error: {}", e)))?;
+        .map_err(|e| ApiResponse::<()>::internal_err(format!("Database error: {}", e)))?;
     let favorites = state.db.export_favorites()
-        .map_err(|e| ApiResponse::<db::FullExport>::internal_err(format!("Database error: {}", e)))?;
+        .map_err(|e| ApiResponse::<()>::internal_err(format!("Database error: {}", e)))?;
     let settings = state.db.export_settings();
+    let favorite_tags = state.db.export_favorite_tags()
+        .map_err(|e| ApiResponse::<()>::internal_err(format!("Database error: {}", e)))?;
 
-    Ok(ApiResponse::ok(db::FullExport { categories, feeds, favorites, settings: Some(settings) }))
+    Ok(ApiResponse::ok(db::FullExport { categories, feeds, favorites, settings: Some(settings), favorite_tags }))
 }
 
 /// POST /api/feeds/import - Import categories and feeds from JSON
@@ -582,6 +601,11 @@ async fn import_feeds(
     // Then import feeds
     let feeds_imported = state.db.import_feeds(&body.feeds)
         .map_err(|e| ApiResponse::<db::ImportResult>::err(format!("Import failed: {}", e)))?;
+
+    // Favorite tags come before the favorites that reference them by name
+    if let Err(e) = state.db.import_favorite_tags(&body.favorite_tags) {
+        tracing::error!("Failed to import favorite tags: {}", e);
+    }
 
     // Finally import favorite articles (must be after feeds, since they reference feed URLs)
     let favorites_imported = state.db.import_favorites(&body.favorites)
@@ -607,13 +631,14 @@ async fn export_feeds_opml(
     let feeds = state.db.export_feeds()
         .map_err(|e| ApiResponse::<String>::internal_err(format!("Database error: {}", e)))?;
 
-    // OPML has no equivalent for favorites and settings, so they stay empty;
-    // the JSON export remains the full-fidelity format
+    // OPML has no equivalent for favorites, favorite tags and settings, so
+    // they stay empty; the JSON export remains the full-fidelity format
     let export = db::FullExport {
         categories,
         feeds,
         favorites: Vec::new(),
         settings: None,
+        favorite_tags: Vec::new(),
     };
 
     Ok(ApiResponse::ok(opml::build_opml(&export)))
@@ -633,14 +658,14 @@ struct OpmlImportRequest {
 async fn parse_feeds_opml(
     State(state): State<Arc<AppState>>,
     Json(body): Json<OpmlImportRequest>,
-) -> Result<Json<ApiResponse<db::FullExport>>, (StatusCode, Json<ApiResponse<db::FullExport>>)> {
+) -> Result<Json<ApiResponse<db::FullExport>>, (StatusCode, Json<ApiResponse<()>>)> {
     // Outlines outside any folder land in the default category
     let default_category = state.db.default_category_name()
-        .map_err(|e| ApiResponse::<db::FullExport>::internal_err(format!("Database error: {}", e)))?;
+        .map_err(|e| ApiResponse::<()>::internal_err(format!("Database error: {}", e)))?;
 
     match opml::parse_opml(&body.opml, &default_category) {
         Ok(parsed) => Ok(ApiResponse::ok(parsed)),
-        Err(e) => Err(ApiResponse::<db::FullExport>::err(e)),
+        Err(e) => Err(ApiResponse::<()>::err(e)),
     }
 }
 
@@ -672,6 +697,8 @@ async fn add_category(
             let msg = format!("{}", e);
             if msg.contains("cat_name_reserved") {
                 Err(ApiResponse::err("cat_name_reserved"))
+            } else if is_unique_violation(&e) {
+                Err(ApiResponse::err("cat_name_exists"))
             } else {
                 Err(ApiResponse::err(format!("Failed to add category: {}", e)))
             }
@@ -688,6 +715,7 @@ async fn rename_category(
     match state.db.rename_category(id, &body.name) {
         Ok(0) => Err(ApiResponse::err("Cannot rename the default category")),
         Ok(_) => Ok(ApiResponse::ok(())),
+        Err(e) if is_unique_violation(&e) => Err(ApiResponse::err("cat_name_exists")),
         Err(e) => Err(ApiResponse::err(format!("Failed to rename: {}", e))),
     }
 }
@@ -704,6 +732,113 @@ async fn delete_category(
         Ok(_) => Ok(ApiResponse::ok(())),
         Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
     }
+}
+
+// ─── Favorite tag handlers ─────────────────────────────────────────────────
+
+/// GET /api/favorite-tags - List all favorite tags with their usage count
+async fn get_favorite_tags(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ApiResponse<Vec<db::FavoriteTag>>>, (StatusCode, Json<ApiResponse<Vec<db::FavoriteTag>>>)> {
+    match state.db.get_favorite_tags() {
+        Ok(tags) => Ok(ApiResponse::ok(tags)),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+#[derive(Deserialize)]
+struct FavoriteTagRequest {
+    name: String,
+}
+
+/// POST /api/favorite-tags - Create a new favorite tag
+async fn add_favorite_tag(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<FavoriteTagRequest>,
+) -> Result<Json<ApiResponse<i64>>, (StatusCode, Json<ApiResponse<i64>>)> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(ApiResponse::err("Tag name cannot be empty"));
+    }
+
+    match state.db.add_favorite_tag(name) {
+        Ok(id) => Ok(ApiResponse::ok(id)),
+        Err(e) if is_unique_violation(&e) => Err(ApiResponse::err("tag_name_exists")),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+/// PUT /api/favorite-tags/{id} - Rename a favorite tag. The articles that
+/// have it show the new name right away.
+async fn rename_favorite_tag(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(body): Json<FavoriteTagRequest>,
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(ApiResponse::err("Tag name cannot be empty"));
+    }
+
+    match state.db.rename_favorite_tag(id, name) {
+        Ok(0) => Err(ApiResponse::err("Tag not found")),
+        Ok(_) => Ok(ApiResponse::ok(())),
+        Err(e) if is_unique_violation(&e) => Err(ApiResponse::err("tag_name_exists")),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+/// DELETE /api/favorite-tags/{id} - Delete a favorite tag, removing it from
+/// every article that has it. Unlike categories, a tag in use can be deleted:
+/// the frontend asks for confirmation in that case.
+async fn delete_favorite_tag(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> Result<Json<ApiResponse<()>>, (StatusCode, Json<ApiResponse<()>>)> {
+    match state.db.delete_favorite_tag(id) {
+        Ok(0) => Err(ApiResponse::err("Tag not found")),
+        Ok(_) => Ok(ApiResponse::ok(())),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+/// PUT /api/articles/{id}/tags/{tag_id} - Assign a favorite tag to an
+/// article. Only favorites can have tags, up to `db::MAX_TAGS` each.
+/// Returns the article's tags after the change.
+async fn assign_article_tag(
+    State(state): State<Arc<AppState>>,
+    Path((id, tag_id)): Path<(String, i64)>,
+) -> Result<Json<ApiResponse<Vec<db::ArticleTag>>>, (StatusCode, Json<ApiResponse<Vec<db::ArticleTag>>>)> {
+    match state.db.assign_article_tag(&id, tag_id) {
+        Ok(db::TagAssignment::Assigned(tags)) => Ok(ApiResponse::ok(tags)),
+        Ok(db::TagAssignment::ArticleNotFound) => Err(ApiResponse::err("Article not found")),
+        Ok(db::TagAssignment::NotFavorite) => Err(ApiResponse::err("tag_article_not_favorite")),
+        Ok(db::TagAssignment::TagNotFound) => Err(ApiResponse::err("Tag not found")),
+        Ok(db::TagAssignment::LimitReached) => Err(ApiResponse::err("tag_limit_reached")),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+/// DELETE /api/articles/{id}/tags/{tag_id} - Remove a favorite tag from an
+/// article. Returns the article's tags after the change.
+async fn unassign_article_tag(
+    State(state): State<Arc<AppState>>,
+    Path((id, tag_id)): Path<(String, i64)>,
+) -> Result<Json<ApiResponse<Vec<db::ArticleTag>>>, (StatusCode, Json<ApiResponse<Vec<db::ArticleTag>>>)> {
+    match state.db.unassign_article_tag(&id, tag_id) {
+        Ok(tags) => Ok(ApiResponse::ok(tags)),
+        Err(e) => Err(ApiResponse::internal_err(format!("Database error: {}", e))),
+    }
+}
+
+/// Tells whether a database error comes from a constraint violation, which
+/// for the names of categories and favorite tags can only be the UNIQUE
+/// constraint.
+fn is_unique_violation(e: &rusqlite::Error) -> bool {
+    matches!(
+        e,
+        rusqlite::Error::SqliteFailure(err, _) if err.code == rusqlite::ErrorCode::ConstraintViolation
+    )
 }
 
 // ─── API config handlers ───────────────────────────────────────────────────
