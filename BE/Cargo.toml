@@ -1,7 +1,8 @@
 [package]
 name = "meigrss"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2024"
+rust-version = "1.98"
 description = "MeigRSS - Your personal news feed aggregator with AI summaries"
 authors = ["Giulio Magini"]
 
@@ -37,10 +38,10 @@ scraper = "0.29"
 readabilityrs = "0.1"
 
 # EML file parsing for newsletter import
-mail-parser = "0.11"
+mail-parser = "1"
 
 # Database
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

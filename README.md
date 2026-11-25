@@ -57,7 +57,7 @@ You can find all the functionality explanation [in this video](https://www.youtu
 
 **Tested on:** Windows 11, Linux (Debian 13)
 
-**AI API tested with:** Mistral. Other providers (OpenAI, Claude, Gemini) use standard API formats and should work without issues, but have not been explicitly tested.
+**AI API tested with:** Mistral, Gemini. Other providers (OpenAI, Claude) use standard API formats and should work without issues, but have not been explicitly tested.
 
 **Web Feed API tested with:** Scrape.do. Other providers (ScraperAPI, ScrapingBee, Scrapfly, ZenRows) use the same API + URL formats and should work without issues, but have not been explicitly tested.
 

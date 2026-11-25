@@ -314,34 +314,34 @@ MeigRSS supports four AI providers for summary generation:
 
 | Provider | Model | Free plan |
 |---|---|---|
-| **Mistral 500 chars** | Ministral 3 8B | Yes (Free mode) |
-| **Mistral 1000 chars** (default) | Ministral 3 14B | Yes (Free mode) |
+| **Gemini** (default) | gemini-3.5-flash-lite | Yes (free tier, with rate limits) |
+| Mistral 500 chars | Ministral 3 8B | No (Mistral's Free plan no longer includes API access) |
+| Mistral 1000 chars | Ministral 3 14B | No (Mistral's Free plan no longer includes API access) |
 | OpenAI | gpt-6-luna | No |
 | Claude | claude-haiku-5-5 | No |
-| Gemini | gemini-3.5-flash-lite | Yes (with limits) |
 
 The summary prompt adapts to the UI language and to the model: Mistral 500 chars generates shorter summaries (3-5 sentences, 500 chars) while other models generate longer ones (3-10 sentences, 1000 chars).
 
-### Creating a free Mistral account
+### Creating a free Gemini API key
 
-Mistral offers a free plan with limits. Check their site for more information.
+1. Go to [Google AI Studio](https://aistudio.google.com) and sign in with a Google account
+2. Open the **API keys** section and create a new key (no billing account is needed for the free tier)
+3. Copy the key
 
-1. Go to [console.mistral.ai](https://console.mistral.ai) and create an account
-2. In the **Subscription** section, click **Experiment for free**
-3. Verify your phone number (one number per account)
-4. Go to the **API Keys** section and generate a new key
-5. **Copy it immediately** - it is shown only once
+> **Note:** free tier rate limits apply per project, and the daily quota resets at midnight Pacific time. On the free tier Google uses the submitted content to improve its products: use a paid tier if this is a concern.
+
+> **Note on Mistral:** Mistral's Free plan no longer includes API access. A key from a Free account fails with `402 Payment Required` (`billing_no_api_budget_configured`). To keep using the Mistral providers, enable pay-as-you-go billing in the Mistral admin panel.
 
 ### Saving the API key in MeigRSS
 
 1. Go to **Settings > API Configuration**
-2. Select the provider (Mistral 1000 chars is recommended for summaries)
+2. Select the provider (Gemini is the default and recommended choice, since it has a free tier)
 3. Paste the API key
 4. Click **Save and test**
 
 The key is encrypted with AES-256-GCM and stored in the database. It is never exposed in plain text by any endpoint. The currently saved provider and masked key are displayed in the configuration page.
 
-> **Note:** Mistral 1000 chars is recommended: the smaller model behind Mistral 500 chars may mix English words into summaries written in other languages. Use Mistral 500 chars only if you prefer shorter summaries.
+> **Note:** among the Mistral providers, Mistral 1000 chars is recommended: the smaller model behind Mistral 500 chars may mix English words into summaries written in other languages.
 
 ### Plan information
 

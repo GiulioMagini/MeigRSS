@@ -52,9 +52,10 @@ impl LlmProvider {
             // Chat Completions, used here for every OpenAI model
             Self::OpenAI => "https://api.openai.com/v1/responses",
             Self::Claude => "https://api.anthropic.com/v1/messages",
-            // Gemini Interactions API: GA since June 2026 and recommended for new
-            // projects, it supersedes the legacy generateContent endpoint
-            Self::Gemini => "https://generativelanguage.googleapis.com/v1beta/interactions",
+            // Gemini Interactions API on the stable v1 surface (GA since June 2026):
+            // recommended for new projects, it supersedes the legacy generateContent
+            // endpoint, and unlike v1beta it is not subject to breaking changes
+            Self::Gemini => "https://generativelanguage.googleapis.com/v1/interactions",
         }
     }
 
@@ -63,8 +64,9 @@ impl LlmProvider {
     /// fast, low-cost tiers are preferred over frontier models.
     pub fn default_model(&self) -> &'static str {
         match self {
-            // Ministral 3 8B: same API and key as the Mistral models, but not
-            // aliased to the Vibe CLI models, so it is not capped by the Vibe budget
+            // Ministral 3 8B: not aliased to the Vibe CLI models, so it is not capped
+            // by the Vibe budget. Mistral's Free plan no longer covers API access:
+            // both Mistral providers need billing enabled on the account
             Self::Mistral500Chars => "ministral-8b-latest",
             // Ministral 3 14B: top tier of the same family, used for longer summaries
             Self::Mistral1000Chars => "ministral-14b-latest",
@@ -74,7 +76,8 @@ impl LlmProvider {
             // Claude Haiku 5.5: fastest and lowest-cost Claude tier, ideal for
             // simple summaries ($0.10/$0.50 per MTok for prompts up to 100K tokens)
             Self::Claude => "claude-haiku-5-5",
-            // Choose to pass to free Flash Lite version
+            // Gemini 3.5 Flash-Lite: newest Flash-Lite tier, free of charge on the
+            // free tier (within rate limits), which makes Gemini the default provider
             Self::Gemini => "gemini-3.5-flash-lite",
         }
     }

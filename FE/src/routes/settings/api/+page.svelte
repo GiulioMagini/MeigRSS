@@ -7,7 +7,7 @@
     const setLoading = getContext("setLoading");
 
     let savedProvider = $state("");
-    let selectedProvider = $state("mistral_1000_chars");
+    let selectedProvider = $state("gemini");
     let apiKey = $state("");
     let keyStatus = $state("");
     let supportsUsage = $state(true);
@@ -168,7 +168,7 @@
             await apiDelete("/api/config/api");
             savedProvider = "";
             keyStatus = "";
-            selectedProvider = "mistral_1000_chars";
+            selectedProvider = "gemini";
             apiKey = "";
             testResult = null;
             planInfo = "";
